@@ -131,6 +131,17 @@ export function prepareFunctionBuilds(
       continue;
     }
 
+    if (mode === "none") {
+      const [modulePath, exportName = "handler"] = fn.handler.split(".");
+      const absModulePath = path.resolve(process.cwd(), modulePath);
+      const assetPath = path.dirname(absModulePath);
+      output[functionName] = {
+        assetPath,
+        handler: `${path.basename(modulePath)}.${exportName}`,
+      };
+      continue;
+    }
+
     output[functionName] = compileTypeScriptHandler(functionName, fn.handler);
   }
   return output;

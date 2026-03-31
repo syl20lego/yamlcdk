@@ -53,15 +53,21 @@ If you want to exercise deploy/diff/remove flows against AWS, make sure you also
 ## Repository layout
 
 - `README.md` - end-user install/usage docs
-- `examples/` - example YAML configs; `examples/service.yml` is the canonical sample to keep in sync with supported config
+- `examples/` - example configs; `examples/service.yml` is the canonical yamlcdk sample, `examples/cloudformation.yml` is the canonical CloudFormation sample
 - `src/cli.ts` - Commander-based CLI entrypoint
 - `src/commands/` - thin command handlers (`init`, `validate`, `synth`, `bootstrap`, `diff`, `deploy`, `remove`)
 - `src/config/`
   - `schema.ts` - raw config Zod schemas and validation
   - `normalize.ts` - defaulting and normalization (`stage`, `region`, `stackName`, empty sections)
   - `load.ts` - YAML file loading
-  - `loader.ts` - definition-plugin entry to `ServiceModel`
-- `src/definitions/yamlcdk/` - native `yamlcdk.yml` definition plugin and starter template
+  - `loader.ts` - definition-plugin dispatch via `DefinitionRegistry` to `ServiceModel`
+- `src/definitions/`
+  - `registry.ts` - shared `DefinitionRegistry` setup (registers all built-in plugins)
+  - `yamlcdk/` - native `yamlcdk.yml` definition plugin and starter template
+  - `cloudformation/` - CloudFormation YAML definition plugin
+    - `cfn-yaml.ts` - custom js-yaml schema for intrinsic functions (`!Ref`, `!GetAtt`, `!Sub`, `!Join`, etc.)
+    - `adapt.ts` - CloudFormation template → `ServiceModel` adaptation
+    - `plugin.ts` - `cloudformationDefinitionPlugin` implementation
 - `src/compiler/`
   - `model.ts` - canonical `ServiceModel` and event/build/provider schemas
   - `stack-builder.ts` - compiler lifecycle orchestration
@@ -79,6 +85,7 @@ If you want to exercise deploy/diff/remove flows against AWS, make sure you also
 
 1. Start from the user-facing behavior you want to change:
    - config/YAML change -> start in `src/config/` and `src/definitions/yamlcdk/`
+   - CloudFormation format change -> start in `src/definitions/cloudformation/`
    - compiler/domain change -> start in `src/compiler/`
    - CLI flag/command change -> start in `src/cli.ts` and `src/commands/`
 2. Make the schema/model change first.
@@ -193,17 +200,21 @@ Key files:
 
 - contract: `src/compiler/plugins/definition-plugin.ts`
 - registry types: `src/compiler/plugins/registry.ts`
-- current yamlcdk implementation: `src/definitions/yamlcdk/plugin.ts`
-- current loader entrypoint: `src/config/loader.ts`
+- shared registry setup: `src/definitions/registry.ts`
+- yamlcdk implementation: `src/definitions/yamlcdk/plugin.ts`
+- CloudFormation implementation: `src/definitions/cloudformation/plugin.ts`
+- loader dispatch: `src/config/loader.ts`
 
 ### Current state of the repo
 
-The **plugin contract and registries exist**, but `loadModel()` currently calls `yamlcdkDefinitionPlugin.load(filePath)` directly, and `runInit()` directly uses `yamlcdkDefinitionPlugin.generateStarter()`.
+The **plugin contract, registries, and loader dispatch are all wired**. `loadModel()` resolves the correct definition plugin through the shared `DefinitionRegistry` in `src/definitions/registry.ts`. `runInit()` selects a plugin's `generateStarter()` based on the `--format` flag.
 
-That means adding a second definition format today is not just "drop in a new plugin":
+Two built-in plugins exist:
 
-- you must implement the plugin
-- and you must wire the loader/init path to use it
+- **`yamlcdkDefinitionPlugin`** — catch-all for `.yml`/`.yaml` files in the native yamlcdk format.
+- **`cloudformationDefinitionPlugin`** — matches CloudFormation templates by detecting `AWSTemplateFormatVersion` or `Resources` with `Type: AWS::*` in the first 4KB of the file.
+
+The cloudformation plugin is registered first (more specific detection), so it takes precedence when both could match.
 
 ### Safe process
 
@@ -214,11 +225,9 @@ That means adding a second definition format today is not just "drop in a new pl
    - `load(filePath)` to parse -> validate -> normalize/adapt -> return `ServiceModel`
    - `generateStarter()` if the format should support `init`
 3. Export it from `src/definitions/<format>/index.ts`
-4. Update `src/config/loader.ts`
-   - either wire the new plugin directly
-   - or refactor `loadModel()` to use `DefinitionRegistry`
-5. If `init` should generate that format, update `src/commands/init.ts` accordingly
-6. Add tests in `test/plugins.test.ts`
+4. Register it in `src/definitions/registry.ts` — pay attention to registration order (more specific plugins first)
+5. Add tests in `test/`
+6. If the format should support `init`, the `--format` flag in `src/commands/init.ts` already dispatches through the registry
 
 ### Definition-plugin expectations
 
@@ -287,6 +296,14 @@ What the current suites cover:
   - synthesized stack behavior
   - domain interactions
   - event/resource wiring
+- `test/cloudformation.test.ts`
+  - CloudFormation YAML parsing with intrinsic functions
+  - intrinsic function type guards
+  - `canLoad()` detection (CloudFormation vs yamlcdk format)
+  - definition registry resolution
+  - resource extraction (Lambda, S3, DynamoDB, SQS, SNS)
+  - event wiring (EventSourceMapping, SNS subscription, S3 notification, EventBridge, API Gateway V2)
+  - full end-to-end template loading
 
 Update tests when you change:
 
@@ -318,8 +335,10 @@ Update user-facing docs/examples when you change:
 Concretely, keep these in sync when relevant:
 
 - `README.md`
-- `examples/service.yml`
-- `src/definitions/yamlcdk/plugin.ts` starter template
+- `examples/service.yml` (yamlcdk format)
+- `examples/cloudformation.yml` (CloudFormation format)
+- `src/definitions/yamlcdk/plugin.ts` yamlcdk starter template
+- `src/definitions/cloudformation/plugin.ts` CloudFormation starter template
 - `DEVELOPER.md` for contributor workflow/internal architecture changes
 
 ## Package/bin entry points and local consumption

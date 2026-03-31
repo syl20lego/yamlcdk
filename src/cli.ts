@@ -17,10 +17,15 @@ program
 
 program
   .command("init")
-  .description("Create a starter YAML config")
+  .description("Create a starter config")
   .option("-c, --config <path>", "Config file path", "yamlcdk.yml")
-  .action((opts: { config: string }) => {
-    runInit(opts.config);
+  .option(
+    "-f, --format <format>",
+    "Config format (yamlcdk or cloudformation)",
+    "yamlcdk",
+  )
+  .action((opts: { config: string; format: string }) => {
+    runInit(opts.config, opts.format);
   });
 
 program

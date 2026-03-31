@@ -1,0 +1,711 @@
+import { describe, expect, test } from "vitest";
+import fs from "node:fs";
+import path from "node:path";
+import os from "node:os";
+import {
+  cloudformationDefinitionPlugin,
+  adaptCfnTemplate,
+  parseCfnYaml,
+  isCfnRef,
+  isCfnGetAtt,
+  resolveLogicalId,
+} from "../src/definitions/cloudformation/index.js";
+import { DomainConfigs } from "../src/compiler/plugins/domain-configs.js";
+import {
+  S3_CONFIG,
+  DYNAMODB_CONFIG,
+  SQS_CONFIG,
+  SNS_CONFIG,
+  APIS_CONFIG,
+} from "../src/compiler/plugins/native-domain-configs.js";
+import { definitionRegistry } from "../src/definitions/registry.js";
+
+// ─── Helper ─────────────────────────────────────────────────
+
+function writeTmpYaml(content: string, filename = "template.yml"): string {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "yamlcdk-cfn-test-"));
+  const filePath = path.join(dir, filename);
+  fs.writeFileSync(filePath, content, "utf8");
+  return filePath;
+}
+
+// ─── CloudFormation YAML parsing ────────────────────────────
+
+describe("CloudFormation YAML parsing", () => {
+  test("parses !Ref intrinsic function", () => {
+    const result = parseCfnYaml("value: !Ref MyResource") as Record<
+      string,
+      unknown
+    >;
+    expect(result.value).toEqual({ Ref: "MyResource" });
+  });
+
+  test("parses !GetAtt scalar form", () => {
+    const result = parseCfnYaml("value: !GetAtt MyResource.Arn") as Record<
+      string,
+      unknown
+    >;
+    expect(result.value).toEqual({
+      "Fn::GetAtt": ["MyResource", "Arn"],
+    });
+  });
+
+  test("parses !GetAtt sequence form", () => {
+    const result = parseCfnYaml(
+      "value: !GetAtt [MyResource, Arn]",
+    ) as Record<string, unknown>;
+    expect(result.value).toEqual({
+      "Fn::GetAtt": ["MyResource", "Arn"],
+    });
+  });
+
+  test("parses !Sub scalar form", () => {
+    const result = parseCfnYaml(
+      'value: !Sub "arn:aws:s3:::${BucketName}"',
+    ) as Record<string, unknown>;
+    expect(result.value).toEqual({
+      "Fn::Sub": "arn:aws:s3:::${BucketName}",
+    });
+  });
+
+  test("parses !Join", () => {
+    const yaml = `value: !Join ["/", ["a", "b"]]`;
+    const result = parseCfnYaml(yaml) as Record<string, unknown>;
+    expect(result.value).toEqual({ "Fn::Join": ["/", ["a", "b"]] });
+  });
+
+  test("parses full CloudFormation template", () => {
+    const yaml = `
+AWSTemplateFormatVersion: "2010-09-09"
+Resources:
+  MyFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      Handler: index.handler
+      Runtime: nodejs20.x
+  MyQueue:
+    Type: AWS::SQS::Queue
+  MyMapping:
+    Type: AWS::Lambda::EventSourceMapping
+    Properties:
+      FunctionName: !Ref MyFunction
+      EventSourceArn: !GetAtt MyQueue.Arn
+`;
+    const result = parseCfnYaml(yaml) as Record<string, unknown>;
+    expect(result.AWSTemplateFormatVersion).toBe("2010-09-09");
+    const resources = result.Resources as Record<
+      string,
+      Record<string, unknown>
+    >;
+    expect(resources.MyFunction.Type).toBe("AWS::Lambda::Function");
+  });
+});
+
+// ─── Type guards ────────────────────────────────────────────
+
+describe("intrinsic function type guards", () => {
+  test("isCfnRef identifies Ref objects", () => {
+    expect(isCfnRef({ Ref: "X" })).toBe(true);
+    expect(isCfnRef({ "Fn::GetAtt": ["X", "Y"] })).toBe(false);
+    expect(isCfnRef("string")).toBe(false);
+    expect(isCfnRef(null)).toBe(false);
+  });
+
+  test("isCfnGetAtt identifies GetAtt objects", () => {
+    expect(isCfnGetAtt({ "Fn::GetAtt": ["X", "Y"] })).toBe(true);
+    expect(isCfnGetAtt({ Ref: "X" })).toBe(false);
+  });
+
+  test("resolveLogicalId extracts from Ref and GetAtt", () => {
+    expect(resolveLogicalId({ Ref: "MyFunc" })).toBe("MyFunc");
+    expect(resolveLogicalId({ "Fn::GetAtt": ["MyFunc", "Arn"] })).toBe(
+      "MyFunc",
+    );
+    expect(resolveLogicalId("plain string")).toBeUndefined();
+    expect(resolveLogicalId(42)).toBeUndefined();
+  });
+});
+
+// ─── CloudFormation definition plugin ───────────────────────
+
+describe("cloudformation definition plugin", () => {
+  test("formatName is cloudformation", () => {
+    expect(cloudformationDefinitionPlugin.formatName).toBe("cloudformation");
+  });
+
+  test("canLoad matches CloudFormation templates", () => {
+    const cfnPath = writeTmpYaml(
+      'AWSTemplateFormatVersion: "2010-09-09"\nResources: {}',
+    );
+    expect(cloudformationDefinitionPlugin.canLoad(cfnPath)).toBe(true);
+  });
+
+  test("canLoad matches templates with AWS:: resource types", () => {
+    const cfnPath = writeTmpYaml(
+      "Resources:\n  MyFunc:\n    Type: AWS::Lambda::Function",
+    );
+    expect(cloudformationDefinitionPlugin.canLoad(cfnPath)).toBe(true);
+  });
+
+  test("canLoad rejects yamlcdk format", () => {
+    const yamlcdkPath = writeTmpYaml(
+      "service: my-service\nprovider:\n  region: us-east-1\nfunctions: {}",
+    );
+    expect(cloudformationDefinitionPlugin.canLoad(yamlcdkPath)).toBe(false);
+  });
+
+  test("canLoad rejects non-YAML files", () => {
+    const jsonPath = writeTmpYaml('{"key": "value"}', "template.json");
+    expect(cloudformationDefinitionPlugin.canLoad(jsonPath)).toBe(false);
+  });
+
+  test("generateStarter returns valid CloudFormation template", () => {
+    const content = cloudformationDefinitionPlugin.generateStarter!();
+    expect(content).toContain("AWSTemplateFormatVersion");
+    expect(content).toContain("AWS::Lambda::Function");
+    expect(content).toContain("AWS::S3::Bucket");
+    expect(content).toContain("Metadata:");
+    expect(content).toContain("yamlcdk:");
+    expect(content).toContain("service:");
+  });
+});
+
+// ─── Definition registry resolution ────────────────────────
+
+describe("definition registry", () => {
+  test("resolves CloudFormation templates to cfn plugin", () => {
+    const cfnPath = writeTmpYaml(
+      'AWSTemplateFormatVersion: "2010-09-09"\nResources: {}',
+    );
+    const plugin = definitionRegistry.resolve(cfnPath);
+    expect(plugin.formatName).toBe("cloudformation");
+  });
+
+  test("resolves yamlcdk files to yamlcdk plugin", () => {
+    const yamlcdkPath = writeTmpYaml(
+      "service: my-service\nfunctions: {}",
+    );
+    const plugin = definitionRegistry.resolve(yamlcdkPath);
+    expect(plugin.formatName).toBe("yamlcdk");
+  });
+
+  test("contains both plugins", () => {
+    const formats = definitionRegistry.all().map((p) => p.formatName);
+    expect(formats).toContain("cloudformation");
+    expect(formats).toContain("yamlcdk");
+  });
+});
+
+// ─── Template adaptation ────────────────────────────────────
+
+describe("adaptCfnTemplate", () => {
+  test("extracts service metadata", () => {
+    const parsed = parseCfnYaml(`
+AWSTemplateFormatVersion: "2010-09-09"
+Metadata:
+  yamlcdk:
+    service: my-api
+    stage: prod
+    region: eu-west-1
+    tags:
+      env: production
+Resources: {}
+`);
+    const model = adaptCfnTemplate(parsed, "template.yml");
+    expect(model.service).toBe("my-api");
+    expect(model.provider.stage).toBe("prod");
+    expect(model.provider.region).toBe("eu-west-1");
+    expect(model.stackName).toBe("my-api-prod");
+    expect(model.provider.tags?.env).toBe("production");
+  });
+
+  test("derives service name from file path when metadata is absent", () => {
+    const parsed = parseCfnYaml(`
+AWSTemplateFormatVersion: "2010-09-09"
+Resources: {}
+`);
+    const model = adaptCfnTemplate(parsed, "/path/to/infra.yml");
+    expect(model.service).toBe("infra");
+  });
+
+  test("uses defaults for missing provider config", () => {
+    const parsed = parseCfnYaml(`
+AWSTemplateFormatVersion: "2010-09-09"
+Resources: {}
+`);
+    const model = adaptCfnTemplate(parsed, "template.yml");
+    expect(model.provider.stage).toBe("dev");
+    expect(model.provider.region).toBe("us-east-1");
+  });
+
+  test("extracts Lambda functions", () => {
+    const parsed = parseCfnYaml(`
+AWSTemplateFormatVersion: "2010-09-09"
+Metadata:
+  yamlcdk:
+    service: demo
+Resources:
+  HelloFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      Handler: src/hello.handler
+      Runtime: nodejs20.x
+      Timeout: 10
+      MemorySize: 512
+      Environment:
+        Variables:
+          TABLE_NAME: users
+`);
+    const model = adaptCfnTemplate(parsed, "t.yml");
+    expect(model.functions.HelloFunction).toBeDefined();
+    expect(model.functions.HelloFunction.handler).toBe("src/hello.handler");
+    expect(model.functions.HelloFunction.runtime).toBe("nodejs20.x");
+    expect(model.functions.HelloFunction.timeout).toBe(10);
+    expect(model.functions.HelloFunction.memorySize).toBe(512);
+    expect(model.functions.HelloFunction.environment?.TABLE_NAME).toBe(
+      "users",
+    );
+  });
+
+  test("extracts S3 buckets", () => {
+    const parsed = parseCfnYaml(`
+AWSTemplateFormatVersion: "2010-09-09"
+Metadata:
+  yamlcdk:
+    service: demo
+Resources:
+  UploadsBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      VersioningConfiguration:
+        Status: Enabled
+  LogsBucket:
+    Type: AWS::S3::Bucket
+`);
+    const model = adaptCfnTemplate(parsed, "t.yml");
+    const s3Config = model.domainConfigs.require(S3_CONFIG);
+    expect(s3Config.buckets.UploadsBucket.versioned).toBe(true);
+    expect(s3Config.buckets.LogsBucket.versioned).toBeUndefined();
+  });
+
+  test("extracts DynamoDB tables with partition and sort keys", () => {
+    const parsed = parseCfnYaml(`
+AWSTemplateFormatVersion: "2010-09-09"
+Metadata:
+  yamlcdk:
+    service: demo
+Resources:
+  UsersTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      AttributeDefinitions:
+        - AttributeName: pk
+          AttributeType: S
+        - AttributeName: sk
+          AttributeType: N
+      KeySchema:
+        - AttributeName: pk
+          KeyType: HASH
+        - AttributeName: sk
+          KeyType: RANGE
+      BillingMode: PAY_PER_REQUEST
+      StreamSpecification:
+        StreamViewType: NEW_AND_OLD_IMAGES
+`);
+    const model = adaptCfnTemplate(parsed, "t.yml");
+    const dynamoConfig = model.domainConfigs.require(DYNAMODB_CONFIG);
+    const table = dynamoConfig.tables.UsersTable;
+    expect(table.partitionKey).toEqual({ name: "pk", type: "string" });
+    expect(table.sortKey).toEqual({ name: "sk", type: "number" });
+    expect(table.billingMode).toBe("PAY_PER_REQUEST");
+    expect(table.stream).toBe("NEW_AND_OLD_IMAGES");
+  });
+
+  test("extracts SQS queues", () => {
+    const parsed = parseCfnYaml(`
+AWSTemplateFormatVersion: "2010-09-09"
+Metadata:
+  yamlcdk:
+    service: demo
+Resources:
+  JobsQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      VisibilityTimeout: 60
+`);
+    const model = adaptCfnTemplate(parsed, "t.yml");
+    const sqsConfig = model.domainConfigs.require(SQS_CONFIG);
+    expect(sqsConfig.queues.JobsQueue.visibilityTimeout).toBe(60);
+  });
+
+  test("extracts SNS topics with SQS subscriptions", () => {
+    const parsed = parseCfnYaml(`
+AWSTemplateFormatVersion: "2010-09-09"
+Metadata:
+  yamlcdk:
+    service: demo
+Resources:
+  EventsTopic:
+    Type: AWS::SNS::Topic
+  JobsQueue:
+    Type: AWS::SQS::Queue
+  EventsToJobs:
+    Type: AWS::SNS::Subscription
+    Properties:
+      Protocol: sqs
+      TopicArn: !Ref EventsTopic
+      Endpoint: !GetAtt JobsQueue.Arn
+`);
+    const model = adaptCfnTemplate(parsed, "t.yml");
+    const snsConfig = model.domainConfigs.require(SNS_CONFIG);
+    expect(snsConfig.topics.EventsTopic.subscriptions).toHaveLength(1);
+    expect(snsConfig.topics.EventsTopic.subscriptions![0]).toEqual({
+      type: "sqs",
+      target: "JobsQueue",
+    });
+  });
+});
+
+// ─── Event wiring ───────────────────────────────────────────
+
+describe("event wiring", () => {
+  test("wires SQS EventSourceMapping to function", () => {
+    const parsed = parseCfnYaml(`
+AWSTemplateFormatVersion: "2010-09-09"
+Metadata:
+  yamlcdk:
+    service: demo
+Resources:
+  MyFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      Handler: src/handler.handler
+  MyQueue:
+    Type: AWS::SQS::Queue
+  MyMapping:
+    Type: AWS::Lambda::EventSourceMapping
+    Properties:
+      FunctionName: !Ref MyFunction
+      EventSourceArn: !GetAtt MyQueue.Arn
+      BatchSize: 5
+`);
+    const model = adaptCfnTemplate(parsed, "t.yml");
+    const events = model.functions.MyFunction.events;
+    expect(events).toHaveLength(1);
+    expect(events[0].type).toBe("sqs");
+    if (events[0].type === "sqs") {
+      expect(events[0].queue).toBe("MyQueue");
+      expect(events[0].batchSize).toBe(5);
+    }
+  });
+
+  test("wires DynamoDB EventSourceMapping to function", () => {
+    const parsed = parseCfnYaml(`
+AWSTemplateFormatVersion: "2010-09-09"
+Metadata:
+  yamlcdk:
+    service: demo
+Resources:
+  ProcessFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      Handler: src/process.handler
+  OrdersTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      AttributeDefinitions:
+        - AttributeName: pk
+          AttributeType: S
+      KeySchema:
+        - AttributeName: pk
+          KeyType: HASH
+      StreamSpecification:
+        StreamViewType: NEW_IMAGE
+  StreamMapping:
+    Type: AWS::Lambda::EventSourceMapping
+    Properties:
+      FunctionName: !Ref ProcessFunction
+      EventSourceArn: !GetAtt OrdersTable.StreamArn
+      BatchSize: 100
+      StartingPosition: TRIM_HORIZON
+`);
+    const model = adaptCfnTemplate(parsed, "t.yml");
+    const events = model.functions.ProcessFunction.events;
+    expect(events).toHaveLength(1);
+    expect(events[0].type).toBe("dynamodb-stream");
+    if (events[0].type === "dynamodb-stream") {
+      expect(events[0].table).toBe("OrdersTable");
+      expect(events[0].batchSize).toBe(100);
+      expect(events[0].startingPosition).toBe("TRIM_HORIZON");
+    }
+  });
+
+  test("wires SNS Lambda subscription to function", () => {
+    const parsed = parseCfnYaml(`
+AWSTemplateFormatVersion: "2010-09-09"
+Metadata:
+  yamlcdk:
+    service: demo
+Resources:
+  NotifyFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      Handler: src/notify.handler
+  AlertsTopic:
+    Type: AWS::SNS::Topic
+  NotifySub:
+    Type: AWS::SNS::Subscription
+    Properties:
+      Protocol: lambda
+      TopicArn: !Ref AlertsTopic
+      Endpoint: !GetAtt NotifyFunction.Arn
+`);
+    const model = adaptCfnTemplate(parsed, "t.yml");
+    const events = model.functions.NotifyFunction.events;
+    expect(events).toHaveLength(1);
+    expect(events[0].type).toBe("sns");
+    if (events[0].type === "sns") {
+      expect(events[0].topic).toBe("AlertsTopic");
+    }
+  });
+
+  test("wires S3 notification to function", () => {
+    const parsed = parseCfnYaml(`
+AWSTemplateFormatVersion: "2010-09-09"
+Metadata:
+  yamlcdk:
+    service: demo
+Resources:
+  ProcessFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      Handler: src/process.handler
+  DataBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      NotificationConfiguration:
+        LambdaConfigurations:
+          - Event: s3:ObjectCreated:*
+            Function: !GetAtt ProcessFunction.Arn
+`);
+    const model = adaptCfnTemplate(parsed, "t.yml");
+    const events = model.functions.ProcessFunction.events;
+    expect(events).toHaveLength(1);
+    expect(events[0].type).toBe("s3");
+    if (events[0].type === "s3") {
+      expect(events[0].bucket).toBe("DataBucket");
+      expect(events[0].events).toEqual(["s3:ObjectCreated:*"]);
+    }
+  });
+
+  test("wires EventBridge schedule rule to function", () => {
+    const parsed = parseCfnYaml(`
+AWSTemplateFormatVersion: "2010-09-09"
+Metadata:
+  yamlcdk:
+    service: demo
+Resources:
+  CronFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      Handler: src/cron.handler
+  HourlyRule:
+    Type: AWS::Events::Rule
+    Properties:
+      ScheduleExpression: "rate(1 hour)"
+      Targets:
+        - Arn: !GetAtt CronFunction.Arn
+          Id: CronTarget
+`);
+    const model = adaptCfnTemplate(parsed, "t.yml");
+    const events = model.functions.CronFunction.events;
+    expect(events).toHaveLength(1);
+    expect(events[0].type).toBe("eventbridge");
+    if (events[0].type === "eventbridge") {
+      expect(events[0].schedule).toBe("rate(1 hour)");
+    }
+  });
+
+  test("wires EventBridge event pattern rule to function", () => {
+    const parsed = parseCfnYaml(`
+AWSTemplateFormatVersion: "2010-09-09"
+Metadata:
+  yamlcdk:
+    service: demo
+Resources:
+  HandlerFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      Handler: src/handler.handler
+  PatternRule:
+    Type: AWS::Events::Rule
+    Properties:
+      EventPattern:
+        source:
+          - aws.s3
+      Targets:
+        - Arn: !GetAtt HandlerFunction.Arn
+          Id: HandlerTarget
+`);
+    const model = adaptCfnTemplate(parsed, "t.yml");
+    const events = model.functions.HandlerFunction.events;
+    expect(events).toHaveLength(1);
+    expect(events[0].type).toBe("eventbridge");
+    if (events[0].type === "eventbridge") {
+      expect(events[0].eventPattern).toEqual({ source: ["aws.s3"] });
+    }
+  });
+
+  test("wires HTTP API route to function via integration", () => {
+    const parsed = parseCfnYaml(`
+AWSTemplateFormatVersion: "2010-09-09"
+Metadata:
+  yamlcdk:
+    service: demo
+Resources:
+  ApiFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      Handler: src/api.handler
+  HttpApi:
+    Type: AWS::ApiGatewayV2::Api
+    Properties:
+      ProtocolType: HTTP
+  ApiIntegration:
+    Type: AWS::ApiGatewayV2::Integration
+    Properties:
+      ApiId: !Ref HttpApi
+      IntegrationType: AWS_PROXY
+      IntegrationUri: !GetAtt ApiFunction.Arn
+  GetRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref HttpApi
+      RouteKey: "GET /items"
+      Target: !Join ["/", ["integrations", !Ref ApiIntegration]]
+  PostRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref HttpApi
+      RouteKey: "POST /items"
+      Target: !Join ["/", ["integrations", !Ref ApiIntegration]]
+`);
+    const model = adaptCfnTemplate(parsed, "t.yml");
+    const events = model.functions.ApiFunction.events;
+    expect(events).toHaveLength(2);
+    const httpEvents = events.filter((e) => e.type === "http");
+    expect(httpEvents).toHaveLength(2);
+    const methods = httpEvents.map((e) =>
+      e.type === "http" ? e.method : "",
+    );
+    expect(methods.sort()).toEqual(["GET", "POST"]);
+  });
+
+  test("wires multiple event types to the same function", () => {
+    const parsed = parseCfnYaml(`
+AWSTemplateFormatVersion: "2010-09-09"
+Metadata:
+  yamlcdk:
+    service: demo
+Resources:
+  MultiFn:
+    Type: AWS::Lambda::Function
+    Properties:
+      Handler: src/multi.handler
+  Queue:
+    Type: AWS::SQS::Queue
+  Topic:
+    Type: AWS::SNS::Topic
+  SqsMapping:
+    Type: AWS::Lambda::EventSourceMapping
+    Properties:
+      FunctionName: !Ref MultiFn
+      EventSourceArn: !GetAtt Queue.Arn
+  TopicSub:
+    Type: AWS::SNS::Subscription
+    Properties:
+      Protocol: lambda
+      TopicArn: !Ref Topic
+      Endpoint: !GetAtt MultiFn.Arn
+  ScheduleRule:
+    Type: AWS::Events::Rule
+    Properties:
+      ScheduleExpression: "rate(5 minutes)"
+      Targets:
+        - Arn: !GetAtt MultiFn.Arn
+          Id: MultiFnTarget
+`);
+    const model = adaptCfnTemplate(parsed, "t.yml");
+    const events = model.functions.MultiFn.events;
+    expect(events).toHaveLength(3);
+    const types = events.map((e) => e.type).sort();
+    expect(types).toEqual(["eventbridge", "sns", "sqs"]);
+  });
+});
+
+// ─── Full load from file ────────────────────────────────────
+
+describe("full CloudFormation file load", () => {
+  test("loads example CloudFormation template", () => {
+    const examplePath = path.resolve("examples/cloudformation.yml");
+    const model = cloudformationDefinitionPlugin.load(examplePath);
+
+    expect(model.service).toBe("demo-api");
+    expect(model.provider.stage).toBe("dev");
+    expect(model.provider.region).toBe("us-east-1");
+
+    // Functions
+    expect(model.functions.HelloFunction).toBeDefined();
+    expect(model.functions.ProcessFunction).toBeDefined();
+
+    // S3
+    const s3Config = model.domainConfigs.require(S3_CONFIG);
+    expect(s3Config.buckets.UploadsBucket.versioned).toBe(true);
+
+    // DynamoDB
+    const dynamoConfig = model.domainConfigs.require(DYNAMODB_CONFIG);
+    expect(dynamoConfig.tables.UsersTable.partitionKey.name).toBe("pk");
+    expect(dynamoConfig.tables.UsersTable.sortKey?.name).toBe("sk");
+    expect(dynamoConfig.tables.UsersTable.stream).toBe(
+      "NEW_AND_OLD_IMAGES",
+    );
+
+    // SQS
+    const sqsConfig = model.domainConfigs.require(SQS_CONFIG);
+    expect(sqsConfig.queues.JobsQueue.visibilityTimeout).toBe(30);
+
+    // SNS with subscription
+    const snsConfig = model.domainConfigs.require(SNS_CONFIG);
+    expect(snsConfig.topics.EventsTopic.subscriptions).toHaveLength(1);
+
+    // Event wiring
+    const helloEvents = model.functions.HelloFunction.events;
+    const eventTypes = helloEvents.map((e) => e.type).sort();
+    expect(eventTypes).toEqual([
+      "dynamodb-stream",
+      "eventbridge",
+      "http",
+      "sqs",
+    ]);
+
+    // S3 notification on ProcessFunction
+    const processEvents = model.functions.ProcessFunction.events;
+    expect(processEvents).toHaveLength(1);
+    expect(processEvents[0].type).toBe("s3");
+  });
+
+  test("loads from temp file with default metadata", () => {
+    const content = `
+AWSTemplateFormatVersion: "2010-09-09"
+Resources:
+  Worker:
+    Type: AWS::Lambda::Function
+    Properties:
+      Handler: src/worker.handler
+`;
+    const filePath = writeTmpYaml(content, "my-stack.yml");
+    const model = cloudformationDefinitionPlugin.load(filePath);
+    expect(model.functions.Worker).toBeDefined();
+    expect(model.provider.stage).toBe("dev");
+  });
+});

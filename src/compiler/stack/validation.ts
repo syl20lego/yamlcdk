@@ -17,19 +17,25 @@ export function validateDeploymentMode(config: DeploymentValidationInput): void 
   const hasAssetLocationOverrides = Boolean(
     deployment?.fileAssetsBucketName || deployment?.imageAssetsRepositoryName,
   );
-  const hasRoleOverrides = Boolean(
-    deployment?.cloudFormationExecutionRoleArn || deployment?.deployRoleArn,
+  const hasDeployRoleOverride = Boolean(deployment?.deployRoleArn);
+  const hasCloudFormationExecutionRoleOverride = Boolean(
+    deployment?.cloudFormationExecutionRoleArn,
   );
+  const hasRoleOverrides =
+    hasDeployRoleOverride || hasCloudFormationExecutionRoleOverride;
   const hasCloudFormationServiceRole = Boolean(
     deployment?.cloudFormationServiceRoleArn,
   );
-  const inferredUseCliCredentials = hasAssetLocationOverrides && !hasRoleOverrides;
+  const inferredUseCliCredentials =
+    hasAssetLocationOverrides && !hasDeployRoleOverride;
   const useCliCredentials =
     deployment?.useCliCredentials ?? inferredUseCliCredentials;
 
-  if (useCliCredentials && hasRoleOverrides) {
+  if (useCliCredentials && hasDeployRoleOverride) {
     throw new Error(
-      `provider.deployment.useCliCredentials=true cannot be combined with deploy/cloudformation role overrides. Choose one mode.`,
+      `provider.deployment.useCliCredentials=true cannot be combined with deployRoleArn. ` +
+        `Use either CLI credentials, or a deploy role. ` +
+        `cloudFormationExecutionRoleArn is still allowed in CLI-credentials mode.`,
     );
   }
   if (hasCloudFormationServiceRole && hasRoleOverrides) {
@@ -38,4 +44,3 @@ export function validateDeploymentMode(config: DeploymentValidationInput): void 
     );
   }
 }
-

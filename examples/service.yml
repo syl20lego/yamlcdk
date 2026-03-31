@@ -10,7 +10,6 @@ provider:
     fileAssetsBucketName: my-cdk-assets-us-east-1
     imageAssetsRepositoryName: my-cdk-assets-ecr
     cloudFormationExecutionRoleArn: arn:aws:iam::123456789012:role/MyCfnExecRole
-    deployRoleArn: arn:aws:iam::123456789012:role/MyCdkDeployRole
     useCliCredentials: true
     requireBootstrap: false
 

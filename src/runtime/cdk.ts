@@ -338,9 +338,22 @@ function buildEnv(config: CdkRuntimeConfig): NodeJS.ProcessEnv {
     extractAccountFromRoleArn(config.provider.deployment?.deployRoleArn) ??
     extractAccountFromRoleArn(
       config.provider.deployment?.cloudFormationExecutionRoleArn,
-    ) ??
+  ) ??
     env.CDK_DEFAULT_ACCOUNT;
   return env;
+}
+
+function cdkCloudFormationRoleArgs(config: CdkRuntimeConfig): string[] {
+  const deployment = config.provider.deployment;
+  const useCliCredentials =
+    deployment?.useCliCredentials ??
+    Boolean(
+      (deployment?.fileAssetsBucketName || deployment?.imageAssetsRepositoryName) &&
+        !deployment?.deployRoleArn,
+    );
+  return useCliCredentials && deployment?.cloudFormationExecutionRoleArn
+    ? ["--role-arn", deployment.cloudFormationExecutionRoleArn]
+    : [];
 }
 
 function printStackOutputs(config: CdkRuntimeConfig, env: NodeJS.ProcessEnv): void {
@@ -401,6 +414,7 @@ export function cdkDeploy(config: CdkRuntimeConfig, requireApproval: boolean): v
     config.stackName,
     "--app",
     outdir,
+    ...cdkCloudFormationRoleArgs(config),
     ...(requireApproval ? [] : ["--require-approval", "never"]),
   ];
   try {
@@ -412,10 +426,10 @@ export function cdkDeploy(config: CdkRuntimeConfig, requireApproval: boolean): v
         throw new Error(
           `Bootstrap is missing, but custom provider.deployment overrides are configured.\n` +
             `yamlcdk will not auto-bootstrap in this mode to avoid creating conflicting default CDKToolkit resources.\n` +
-            `Note: requireBootstrap may already be inferred as false, but using deploy/cloudformation role overrides still uses DefaultStackSynthesizer, which requires a bootstrapped environment.\n` +
+            `Note: requireBootstrap may already be inferred as false, but using deployRoleArn still uses DefaultStackSynthesizer, which requires a bootstrapped environment.\n` +
             `Choose one:\n` +
             `  1) Keep role overrides and bootstrap once (yamlcdk bootstrap -c <config.yml> --account <account> --region <region>)\n` +
-            `  2) Use bootstrapless-style mode: remove deployRoleArn/cloudFormationExecutionRoleArn and set useCliCredentials: true with your asset bucket overrides.`,
+            `  2) Use CLI-credentials mode: remove deployRoleArn and set useCliCredentials: true (optionally keeping cloudFormationExecutionRoleArn) with your asset bucket overrides.`,
         );
       }
       const bootstrapTarget = error.account
@@ -441,14 +455,25 @@ export function cdkDeploy(config: CdkRuntimeConfig, requireApproval: boolean): v
 
 export function cdkDiff(config: CdkRuntimeConfig): void {
   const outdir = synthToTemp(config);
-  runCdk(config, ["diff", config.stackName, "--app", outdir], buildEnv(config));
+  runCdk(
+    config,
+    ["diff", config.stackName, "--app", outdir, ...cdkCloudFormationRoleArgs(config)],
+    buildEnv(config),
+  );
 }
 
 export function cdkDestroy(config: CdkRuntimeConfig, force: boolean): void {
   const outdir = synthToTemp(config);
   runCdk(
     config,
-    ["destroy", config.stackName, "--app", outdir, ...(force ? ["--force"] : [])],
+    [
+      "destroy",
+      config.stackName,
+      "--app",
+      outdir,
+      ...cdkCloudFormationRoleArgs(config),
+      ...(force ? ["--force"] : []),
+    ],
     buildEnv(config),
   );
 }

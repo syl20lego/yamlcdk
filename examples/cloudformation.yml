@@ -1,0 +1,130 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: Example CloudFormation template for yamlcdk
+
+Metadata:
+  yamlcdk:
+    service: demo-api
+    stage: dev
+    region: us-east-1
+    deployment:
+      fileAssetsBucketName: my-cdk-assets-us-east-1
+      cloudFormationExecutionRoleArn: arn:aws:iam::123456789012:role/MyCfnExecRole
+      useCliCredentials: true
+      requireBootstrap: false
+    
+Resources:
+  # ─── Lambda Functions ──────────────────────────────────────
+
+  HelloFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      Handler: src/handlers/hello.handler
+      Runtime: nodejs20.x
+      Timeout: 10
+      MemorySize: 256
+      Environment:
+        Variables:
+          STAGE: dev
+
+  ProcessFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      Handler: src/handlers/process.handler
+      Runtime: nodejs20.x
+      Timeout: 30
+
+  # ─── Storage ───────────────────────────────────────────────
+
+  UploadsBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      VersioningConfiguration:
+        Status: Enabled
+      NotificationConfiguration:
+        LambdaConfigurations:
+          - Event: s3:ObjectCreated:*
+            Function: !GetAtt ProcessFunction.Arn
+
+  UsersTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      AttributeDefinitions:
+        - AttributeName: pk
+          AttributeType: S
+        - AttributeName: sk
+          AttributeType: S
+      KeySchema:
+        - AttributeName: pk
+          KeyType: HASH
+        - AttributeName: sk
+          KeyType: RANGE
+      BillingMode: PAY_PER_REQUEST
+      StreamSpecification:
+        StreamViewType: NEW_AND_OLD_IMAGES
+
+  # ─── Messaging ─────────────────────────────────────────────
+
+  JobsQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      VisibilityTimeout: 30
+
+  EventsTopic:
+    Type: AWS::SNS::Topic
+
+  EventsToJobs:
+    Type: AWS::SNS::Subscription
+    Properties:
+      Protocol: sqs
+      TopicArn: !Ref EventsTopic
+      Endpoint: !GetAtt JobsQueue.Arn
+
+  # ─── Event Source Mappings ─────────────────────────────────
+
+  HelloSqsTrigger:
+    Type: AWS::Lambda::EventSourceMapping
+    Properties:
+      FunctionName: !Ref HelloFunction
+      EventSourceArn: !GetAtt JobsQueue.Arn
+      BatchSize: 10
+
+  HelloDynamoTrigger:
+    Type: AWS::Lambda::EventSourceMapping
+    Properties:
+      FunctionName: !Ref HelloFunction
+      EventSourceArn: !GetAtt UsersTable.StreamArn
+      BatchSize: 100
+      StartingPosition: LATEST
+
+  # ─── EventBridge ───────────────────────────────────────────
+
+  ScheduledCheck:
+    Type: AWS::Events::Rule
+    Properties:
+      ScheduleExpression: "rate(1 hour)"
+      Targets:
+        - Arn: !GetAtt HelloFunction.Arn
+          Id: HelloTarget
+
+  # ─── API Gateway (HTTP API) ────────────────────────────────
+
+  HttpApi:
+    Type: AWS::ApiGatewayV2::Api
+    Properties:
+      Name: demo-api
+      ProtocolType: HTTP
+
+  HelloIntegration:
+    Type: AWS::ApiGatewayV2::Integration
+    Properties:
+      ApiId: !Ref HttpApi
+      IntegrationType: AWS_PROXY
+      IntegrationUri: !GetAtt HelloFunction.Arn
+      PayloadFormatVersion: "2.0"
+
+  HelloRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref HttpApi
+      RouteKey: "GET /hello"
+      Target: !Join ["/", ["integrations", !Ref HelloIntegration]]

@@ -22,10 +22,9 @@ export function createStackSynthesizer(
   const hasAssetLocationOverrides = Boolean(
     deployment?.fileAssetsBucketName || deployment?.imageAssetsRepositoryName,
   );
-  const hasRoleOverrides = Boolean(
-    deployment?.cloudFormationExecutionRoleArn || deployment?.deployRoleArn,
-  );
-  const inferredUseCliCredentials = hasAssetLocationOverrides && !hasRoleOverrides;
+  const hasDeployRoleOverride = Boolean(deployment?.deployRoleArn);
+  const inferredUseCliCredentials =
+    hasAssetLocationOverrides && !hasDeployRoleOverride;
   const useCliCredentials =
     deployment?.useCliCredentials ?? inferredUseCliCredentials;
   const hasExplicitDeploymentInfrastructure = Boolean(
@@ -53,4 +52,3 @@ export function createStackSynthesizer(
         generateBootstrapVersionRule: requireBootstrap,
       });
 }
-

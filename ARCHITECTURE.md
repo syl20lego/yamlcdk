@@ -1,8 +1,8 @@
-# cloudinfra architecture
+# yamlcdk architecture
 
-This document describes the **current pluginized architecture** implemented in this repository. It is intentionally aligned with the code under `src/compiler/plugins/`, `src/compiler/domains/`, `src/definitions/cloudinfra/`, `src/config/`, and `src/runtime/`.
+This document describes the **current pluginized architecture** implemented in this repository. It is intentionally aligned with the code under `src/compiler/plugins/`, `src/compiler/domains/`, `src/definitions/`, `src/config/`, and `src/runtime/`.
 
-At a high level, `cloudinfra` is a compiler pipeline:
+At a high level, `yamlcdk` is a compiler pipeline:
 
 1. load a YAML definition,
 2. validate and normalize it,
@@ -28,22 +28,25 @@ The current design is optimizing for a few explicit goals:
 flowchart TD
     CLI["CLI<br/>src/cli.ts<br/>src/commands/*.ts"]
     Loader["Config loading<br/>src/config/load.ts<br/>src/config/loader.ts"]
-    Def["Definition plugin<br/>src/definitions/cloudinfra/plugin.ts"]
+    DefRegistry["DefinitionRegistry<br/>src/definitions/registry.ts"]
+    YamlcdkDef["yamlcdk plugin<br/>src/definitions/yamlcdk/plugin.ts"]
+    CfnDef["cloudformation plugin<br/>src/definitions/cloudformation/plugin.ts"]
     Schema["Zod schemas<br/>src/config/schema.ts"]
     Normalize["Normalization<br/>src/config/normalize.ts"]
     Model["Canonical model<br/>src/compiler/model.ts<br/>ServiceModel + DomainConfigs"]
     Aws["AWS override/runtime boundary<br/>src/runtime/aws.ts"]
     Build["Compiler core<br/>src/compiler/stack-builder.ts<br/>buildApp + ServiceStack"]
-    DefRegistry["DefinitionRegistry<br/>available, not wired into<br/>loadModel() yet"]
     DomainRegistry["DomainRegistry<br/>created by<br/>createNativeDomainRegistry()"]
     PluginRegistry["PluginRegistry<br/>aggregate holder"]
     Domains["Native domain plugins<br/>src/compiler/domains/*.ts"]
     CDK["CDK app / template / deploy<br/>src/runtime/cdk.ts"]
 
     CLI --> Loader
-    Loader --> Def
-    Loader -. future dispatch .-> DefRegistry
-    Def --> Schema
+    Loader --> DefRegistry
+    DefRegistry --> YamlcdkDef
+    DefRegistry --> CfnDef
+    YamlcdkDef --> Schema
+    CfnDef --> Model
     Schema --> Normalize
     Normalize --> Model
     Model --> Aws
@@ -73,10 +76,17 @@ This layer is responsible for **file parsing, schema validation, and normalizati
 
 The definition layer translates a specific source format into the compiler's canonical model.
 
-Today the active definition plugin is `cloudinfraDefinitionPlugin` in `src/definitions/cloudinfra/plugin.ts`. Its job is to:
+`src/config/loader.ts` resolves the correct plugin through a shared `DefinitionRegistry` (defined in `src/definitions/registry.ts`). The registry is populated with all built-in plugins at startup; more specific plugins (cloudformation) are registered first so they take precedence over the catch-all (yamlcdk).
+
+**Built-in definition plugins:**
+
+- **`yamlcdkDefinitionPlugin`** (`src/definitions/yamlcdk/plugin.ts`) — handles `.yml`/`.yaml` files in the native yamlcdk format. Parses via `js-yaml`, validates with Zod, normalizes defaults, and adapts to `ServiceModel`.
+- **`cloudformationDefinitionPlugin`** (`src/definitions/cloudformation/plugin.ts`) — handles CloudFormation YAML templates. Detected by `AWSTemplateFormatVersion` or `Resources` with `AWS::*` types. Parses with a custom `js-yaml` schema that handles intrinsic functions (`!Ref`, `!GetAtt`, `!Sub`, `!Join`, etc.). Extracts Lambda functions, S3 buckets, DynamoDB tables, SQS queues, SNS topics, EventSourceMappings, EventBridge rules, and API Gateway V2 routes. Service-level config (service name, stage, region, tags) is read from the `Metadata.yamlcdk` section.
+
+Each plugin's job is to:
 
 - accept a file,
-- parse and normalize it,
+- parse and validate it,
 - adapt it into the canonical `ServiceModel`,
 - populate `DomainConfigs` for native domains.
 
@@ -147,7 +157,7 @@ Functions remain part of the canonical model because they are central to multipl
 - `dynamodb-stream`
 - `eventbridge`
 
-One important boundary is documented directly in `model.ts`: definition plugins are expected to resolve format-specific defaults before events reach domain plugins. For example, `cloudinfraDefinitionPlugin` resolves REST API key settings before emitting canonical `rest` events.
+One important boundary is documented directly in `model.ts`: definition plugins are expected to resolve format-specific defaults before events reach domain plugins. For example, `yamlcdkDefinitionPlugin` resolves REST API key settings before emitting canonical `rest` events, and `cloudformationDefinitionPlugin` resolves cross-resource references (via `!Ref`/`!GetAtt`) before populating event declarations.
 
 ### `DomainConfigs`
 
@@ -190,21 +200,12 @@ That split lets the compiler stay stable while domain coverage grows.
 
 Definition plugins own the **format-to-model** translation step.
 
-Current built-in definition plugin:
+Built-in definition plugins:
 
-- `cloudinfraDefinitionPlugin` (`src/definitions/cloudinfra/plugin.ts`)
+- **`yamlcdkDefinitionPlugin`** (`src/definitions/yamlcdk/plugin.ts`) — its `canLoad()` matches any `.yml` or `.yaml` path (catch-all). Pipeline: `loadRawConfig()` → `validateServiceConfig()` → `normalizeConfig()` → `adaptConfig()` → `parseServiceModel()`.
+- **`cloudformationDefinitionPlugin`** (`src/definitions/cloudformation/plugin.ts`) — its `canLoad()` reads the first 4KB of `.yml`/`.yaml` files and looks for `AWSTemplateFormatVersion` or `Resources` with `Type: AWS::*`. Pipeline: `parseCfnYaml()` (custom js-yaml schema) → `adaptCfnTemplate()` → `parseServiceModel()`.
 
-Its `canLoad()` currently matches any `.yml` or `.yaml` path, which fits the current loader because `src/config/loader.ts` routes all YAML files through this plugin.
-
-Its current pipeline is:
-
-1. `loadRawConfig(filePath)` from `src/config/load.ts`
-2. `validateServiceConfig()` via `serviceConfigSchema`
-3. `normalizeConfig()` via `normalizedServiceConfigSchema`
-4. `adaptConfig()` into the canonical `ServiceModel`
-5. `parseServiceModel()` before returning
-
-`cloudinfraDefinitionPlugin` also provides `generateStarter()`, which is what `src/commands/init.ts` uses to create starter configs.
+Both plugins provide `generateStarter()`, which is what `src/commands/init.ts` uses to create starter configs (the `--format` flag selects which plugin's starter to use).
 
 ### Domain plugins
 
@@ -258,7 +259,7 @@ Properties of the current implementation:
 - `resolve(filePath)` returns the first plugin whose `canLoad(filePath)` matches,
 - registration order therefore defines dispatch priority.
 
-The registry type is real, but current loading is not routed through it yet. `src/config/loader.ts` currently hardcodes `cloudinfraDefinitionPlugin`.
+The shared registry is created in `src/definitions/registry.ts` and used by `src/config/loader.ts`. The cloudformation plugin is registered first (more specific detection), followed by the yamlcdk plugin (catch-all for `.yml`/`.yaml`).
 
 ### `PluginRegistry`
 
@@ -267,7 +268,7 @@ The registry type is real, but current loading is not routed through it yet. `sr
 - `domains = new DomainRegistry()`
 - `definitions = new DefinitionRegistry()`
 
-It represents the intended combined registry shape, but it is not currently the root of application startup. The active code path instantiates `DomainRegistry` directly and uses the cloudinfra definition plugin directly.
+It represents the intended combined registry shape. The active code path uses `DomainRegistry` directly in the compiler and the shared `DefinitionRegistry` from `src/definitions/registry.ts` for loading.
 
 ## Compiler lifecycle
 
@@ -279,7 +280,7 @@ The first stage happens before `ServiceStack` exists; the remaining stages are e
 
 | Stage | Primary code | What happens |
 | --- | --- | --- |
-| `load` | `src/config/load.ts`, `src/config/schema.ts`, `src/config/normalize.ts`, `src/definitions/cloudinfra/plugin.ts`, `src/config/loader.ts`, `src/runtime/aws.ts` | YAML is parsed, raw config is Zod-validated, defaults are normalized, the canonical `ServiceModel` is produced, and CLI AWS overrides are applied and re-validated. |
+| `load` | `src/config/loader.ts`, `src/definitions/registry.ts`, `src/definitions/yamlcdk/plugin.ts`, `src/definitions/cloudformation/plugin.ts`, `src/config/schema.ts`, `src/config/normalize.ts`, `src/runtime/aws.ts` | The file is dispatched to the matching definition plugin via `DefinitionRegistry`, parsed and adapted into the canonical `ServiceModel`, and CLI AWS overrides are applied and re-validated. |
 | `validate` | `ServiceStack` phase 1 + `domain.validate?.(ctx)` | Domains reject invalid or inconsistent state before construct creation. |
 | `synthesize` | `ServiceStack` phase 2 + `domain.synthesize?.(ctx)` | Domains create CDK constructs, write them into `ctx.refs`, and optionally return `EventBinding[]`. |
 | `bind` | `ServiceStack` phase 3 + `domain.bind?.(ctx, allEvents)` | Domains wire event sources and APIs to already-created resources using the aggregated bindings. |
@@ -287,7 +288,7 @@ The first stage happens before `ServiceStack` exists; the remaining stages are e
 
 ### Load stage in more detail
 
-The load stage has multiple sub-steps:
+The load stage has multiple sub-steps. For the **yamlcdk format**:
 
 1. `loadRawConfig()` reads YAML and immediately calls `validateServiceConfig()` from `src/config/schema.ts`.
 2. `normalizeConfig()` fills defaults such as:
@@ -295,10 +296,18 @@ The load stage has multiple sub-steps:
    - `provider.region` defaulting from config, `AWS_REGION`, or `"us-east-1"`
    - `stackName` defaulting to a sanitized `<service>-<stage>` form
    - empty objects for `functions`, `storage`, `messaging`, and `iam`
-3. `adaptConfig()` in `src/definitions/cloudinfra/plugin.ts` converts `NormalizedServiceConfig` into the canonical `ServiceModel`.
+3. `adaptConfig()` in `src/definitions/yamlcdk/plugin.ts` converts `NormalizedServiceConfig` into the canonical `ServiceModel`.
 4. `adaptDomainConfigs()` writes native domain slices into `DomainConfigs`.
 5. `loadModel()` returns the parsed model.
 6. CLI commands that accept AWS flags call `resolveModelOverrides()` and `assertModelResolution()` from `src/runtime/aws.ts`.
+
+For the **CloudFormation format**, the load stage differs:
+
+1. `parseCfnYaml()` in `src/definitions/cloudformation/cfn-yaml.ts` reads the YAML with a custom schema that parses CloudFormation intrinsic functions (`!Ref`, `!GetAtt`, `!Sub`, `!Join`, etc.) into their long-form equivalents.
+2. `adaptCfnTemplate()` in `src/definitions/cloudformation/adapt.ts` extracts supported CloudFormation resource types, resolves cross-resource references, and builds the `ServiceModel` + `DomainConfigs`.
+3. Service-level config (service name, stage, region, tags, deployment) is read from the `Metadata.yamlcdk` section.
+4. `loadModel()` returns the parsed model.
+5. CLI override resolution proceeds as above.
 
 ### Validate stage
 
@@ -442,7 +451,7 @@ Current CLI commands use the **model-level** path (`resolveModelOverrides()` and
 
 ## Sequence: CLI command to synthesis
 
-The following diagram uses `cloudinfra synth` as the representative path through loading, adaptation, compilation, and synthesis.
+The following diagram uses `yamlcdk synth` as the representative path through loading, adaptation, compilation, and synthesis.
 
 ```mermaid
 sequenceDiagram
@@ -450,28 +459,22 @@ sequenceDiagram
     participant CLI as src/cli.ts
     participant Cmd as runSynth()
     participant Loader as loadModel()
-    participant Def as cloudinfraDefinitionPlugin
-    participant Raw as loadRawConfig()
-    participant Norm as normalizeConfig()
-    participant Adapt as adaptConfig()
+    participant Registry as DefinitionRegistry
+    participant Def as matched DefinitionPlugin
     participant Aws as runtime/aws.ts
     participant Runtime as runtime/cdk.ts
     participant Build as buildApp()
-    participant Registry as createNativeDomainRegistry()
+    participant DomReg as createNativeDomainRegistry()
     participant Stack as ServiceStack
     participant Domains as Domain plugins
     participant CDK as cdk.App
 
-    User->>CLI: cloudinfra synth -c cloudinfra.yml --region us-east-1
+    User->>CLI: yamlcdk synth -c config.yml --region us-east-1
     CLI->>Cmd: runSynth(options)
     Cmd->>Loader: loadModel(options.config)
+    Loader->>Registry: resolve(filePath)
+    Registry-->>Loader: DefinitionPlugin
     Loader->>Def: load(filePath)
-    Def->>Raw: read YAML + validateServiceConfig()
-    Raw-->>Def: RawServiceConfig
-    Def->>Norm: normalizeConfig(raw)
-    Norm-->>Def: NormalizedServiceConfig
-    Def->>Adapt: adaptConfig(normalized)
-    Adapt-->>Def: ServiceModel
     Def-->>Loader: ServiceModel
     Loader-->>Cmd: ServiceModel
     Cmd->>Aws: resolveModelOverrides(model, options)
@@ -480,8 +483,8 @@ sequenceDiagram
     Cmd->>Runtime: cdkSynth(model)
     Runtime->>Build: buildApp(model)
     Build->>Build: validateDeploymentMode(model)
-    Build->>Registry: createNativeDomainRegistry()
-    Registry-->>Build: DomainRegistry
+    Build->>DomReg: createNativeDomainRegistry()
+    DomReg-->>Build: DomainRegistry
     Build->>Stack: new ServiceStack(app, stackName, model, registry)
     Stack->>Domains: validate(ctx)
     Stack->>Domains: synthesize(ctx)
@@ -509,13 +512,15 @@ This is the most complete extension mechanism today:
 
 This is how the existing native domains work.
 
-#### Extend the cloudinfra definition plugin
+#### Extend or add a definition plugin
 
-`cloudinfraDefinitionPlugin` is the active definition plugin today. It can evolve to:
+Two built-in definition plugins exist today: `yamlcdkDefinitionPlugin` and `cloudformationDefinitionPlugin`. Each can evolve independently to:
 
-- adapt more cloudinfra-specific input into `ServiceModel`,
+- adapt more format-specific input into `ServiceModel`,
 - populate additional `DomainConfigs`,
 - generate different starter templates through `generateStarter()`.
+
+New definition plugins can be added by implementing `DefinitionPlugin`, registering in `src/definitions/registry.ts`, and ensuring `canLoad()` correctly discriminates the format.
 
 #### Pass canonical models directly into `buildApp()`
 
@@ -528,12 +533,9 @@ If it receives a normalized config, it calls `adaptConfig()` itself. This is a r
 
 ### Future work only
 
-The codebase clearly hints at future external plugin dispatch, but it is **not current behavior**:
+The codebase hints at future external plugin dispatch, but it is **not current behavior**:
 
-- `DefinitionRegistry` exists and can resolve by `canLoad(filePath)`.
-- `PluginRegistry` exists as a combined holder.
-- `src/config/loader.ts` explicitly says additional definition plugins should eventually resolve through a registry.
-- `src/compiler/plugins/registry.ts` explicitly notes external plugin loading as a future phase.
+- `PluginRegistry` exists as a combined holder but is not the root of application startup.
 
 What is **not** implemented today:
 
@@ -544,7 +546,7 @@ What is **not** implemented today:
 
 So the safe statement for maintainers is:
 
-> The architecture is pluginized in-process today. External plugin loading is future work, not a current extension mechanism.
+> The architecture is pluginized in-process today with multiple built-in definition plugins dispatched through `DefinitionRegistry`. External plugin loading is future work, not a current extension mechanism.
 
 ## Maintainer directory and file map
 
@@ -565,8 +567,14 @@ src/
 │   ├── normalize.ts                # Defaulting and normalization
 │   └── schema.ts                   # Raw/normalized Zod schemas
 ├── definitions/
-│   └── cloudinfra/
-│       ├── plugin.ts               # cloudinfraDefinitionPlugin + adaptConfig()
+│   ├── registry.ts                # Shared DefinitionRegistry setup
+│   ├── yamlcdk/
+│   │   ├── plugin.ts               # yamlcdkDefinitionPlugin + adaptConfig()
+│   │   └── index.ts                # Re-exports
+│   └── cloudformation/
+│       ├── cfn-yaml.ts             # Custom js-yaml schema for CF intrinsic functions
+│       ├── adapt.ts                # CF template -> ServiceModel adaptation
+│       ├── plugin.ts               # cloudformationDefinitionPlugin
 │       └── index.ts                # Re-exports
 ├── compiler/
 │   ├── model.ts                    # Canonical ServiceModel and event/function schemas
@@ -614,4 +622,4 @@ To match the current code, prefer these exact terms:
 
 If a maintainer needs one sentence to remember the current design, it is:
 
-> `cloudinfra` loads a definition through a definition plugin into a canonical `ServiceModel`, stores domain-specific slices in `DomainConfigs`, and then runs ordered domain plugins through `validate -> synthesize -> bind -> finalize` to build the CDK stack.
+> `yamlcdk` loads a definition through a definition plugin (resolved via `DefinitionRegistry`) into a canonical `ServiceModel`, stores domain-specific slices in `DomainConfigs`, and then runs ordered domain plugins through `validate -> synthesize -> bind -> finalize` to build the CDK stack.

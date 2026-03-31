@@ -1,7 +1,7 @@
 import cdk from "aws-cdk-lib";
 import * as dynamodb from "aws-cdk-lib/aws-dynamodb";
+import * as iam from "aws-cdk-lib/aws-iam";
 import * as lambda from "aws-cdk-lib/aws-lambda";
-import * as lambdaEventSources from "aws-cdk-lib/aws-lambda-event-sources";
 import { withStageName } from "../stack/helpers.js";
 import { DYNAMODB_CONFIG } from "../plugins/native-domain-configs.js";
 import type { DomainPlugin } from "../plugins/index.js";
@@ -72,13 +72,33 @@ export const dynamodbDomain: DomainPlugin = {
             `Add "stream: NEW_AND_OLD_IMAGES" (or another view type) to storage.dynamodb.${refName}.`,
         );
       }
-      event.fnResource.addEventSource(
-        new lambdaEventSources.DynamoEventSource(dynamoTable, {
+      new lambda.EventSourceMapping(
+        ctx.stack,
+        `DynamoEventSource${event.functionName}${refName}`,
+        {
+          target: event.fnResource,
+          eventSourceArn: dynamoTable.tableStreamArn,
           startingPosition:
             event.startingPosition === "TRIM_HORIZON"
               ? lambda.StartingPosition.TRIM_HORIZON
               : lambda.StartingPosition.LATEST,
           batchSize: event.batchSize ?? 100,
+        },
+      );
+      event.fnResource.addToRolePolicy(
+        new iam.PolicyStatement({
+          actions: [
+            "dynamodb:DescribeStream",
+            "dynamodb:GetRecords",
+            "dynamodb:GetShardIterator",
+          ],
+          resources: [dynamoTable.tableStreamArn],
+        }),
+      );
+      event.fnResource.addToRolePolicy(
+        new iam.PolicyStatement({
+          actions: ["dynamodb:ListStreams"],
+          resources: ["*"],
         }),
       );
     }

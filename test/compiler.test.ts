@@ -482,7 +482,71 @@ describe("compiler", () => {
     );
 
     expect(() => buildApp(config)).toThrow(
-      "cannot be combined with deploy/cloudformation role overrides",
+      "cannot be combined with deployRoleArn",
+    );
+  });
+
+  test("allows explicit cli credentials with cloudformation execution role", () => {
+    const config = normalizeConfig(
+      validateServiceConfig({
+        service: "demo",
+        provider: {
+          account: "123456789012",
+          region: "us-east-1",
+          deployment: {
+            useCliCredentials: true,
+            cloudFormationExecutionRoleArn:
+              "arn:aws:iam::123456789012:role/MyExecRole",
+          },
+        },
+        functions: {
+          hello: {
+            handler: "src/hello.handler",
+            build: {
+              mode: "external",
+              command: "node -e \"require('fs').mkdirSync('src',{recursive:true});require('fs').writeFileSync('src/hello.js','exports.handler=async()=>({statusCode:200,body:\\\"ok\\\"});')\"",
+              handler: "src/hello.handler",
+            },
+          },
+        },
+      }),
+    );
+
+    const { stack } = buildApp(config);
+    expect(stack.synthesizer.constructor.name).toBe(
+      "CliCredentialsStackSynthesizer",
+    );
+  });
+
+  test("infers cli credentials synthesizer with asset bucket and cloudformation execution role", () => {
+    const config = normalizeConfig(
+      validateServiceConfig({
+        service: "demo",
+        provider: {
+          account: "123456789012",
+          region: "us-east-1",
+          deployment: {
+            fileAssetsBucketName: "custom-assets-bucket",
+            cloudFormationExecutionRoleArn:
+              "arn:aws:iam::123456789012:role/MyExecRole",
+          },
+        },
+        functions: {
+          hello: {
+            handler: "src/hello.handler",
+            build: {
+              mode: "external",
+              command: "node -e \"require('fs').mkdirSync('src',{recursive:true});require('fs').writeFileSync('src/hello.js','exports.handler=async()=>({statusCode:200,body:\\\"ok\\\"});')\"",
+              handler: "src/hello.handler",
+            },
+          },
+        },
+      }),
+    );
+
+    const { stack } = buildApp(config);
+    expect(stack.synthesizer.constructor.name).toBe(
+      "CliCredentialsStackSynthesizer",
     );
   });
 

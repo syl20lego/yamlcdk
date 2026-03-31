@@ -2,13 +2,18 @@
 
 `yamlcdk` ("AWS YAML") is a CLI for defining AWS infrastructure in YAML, turning it into AWS CDK/CloudFormation stacks, and running the usual deployment workflow from the command line: initialize config, validate it, synthesize a template, bootstrap an environment, diff changes, deploy, and remove stacks.
 
-This README is intentionally for CLI users only. Maintainer and contributor material belongs in [ARCHITECTURE.md](./ARCHITECTURE.md) and [DEVELOPER.md](./DEVELOPER.md), not here.
+yamlcdk supports two input formats:
+
+- **yamlcdk format** — a concise, purpose-built YAML schema (see `examples/service.yml`)
+- **CloudFormation YAML** — native CloudFormation templates with `AWSTemplateFormatVersion` (see `examples/cloudformation.yml`)
+
+The correct format is detected automatically based on file content. This README is intentionally for CLI users only. Maintainer and contributor material belongs in [ARCHITECTURE.md](./ARCHITECTURE.md) and [DEVELOPER.md](./DEVELOPER.md), not here.
 
 ## Requirements
 
 - Node.js 20+
 - AWS credentials or profile access for the account you plan to target
-- A YAML config file such as `yamlcdk.yml` (see `examples/service.yml`)
+- A config file: either a yamlcdk YAML file (e.g. `yamlcdk.yml`) or a CloudFormation YAML template
 
 ## Install and run
 
@@ -52,16 +57,24 @@ yamlcdk bootstrap -c yamlcdk.yml --region us-east-1 --account 123456789012
 yamlcdk deploy -c yamlcdk.yml --region us-east-1
 ```
 
+To start with a CloudFormation template instead:
+
+```bash
+yamlcdk init -c template.yml --format cloudformation
+yamlcdk validate -c template.yml
+yamlcdk synth -c template.yml --region us-east-1 > stack.template.json
+```
+
 `bootstrap` is usually a one-time step per account/region when you are using the default CDK deployment mode.
 
-You can also start from `examples/service.yml` for a broader sample.
+You can also start from `examples/service.yml` (yamlcdk format) or `examples/cloudformation.yml` (CloudFormation format) for broader samples.
 
 ## Commands
 
 | Command | What it does | Options |
 | --- | --- | --- |
-| `init` | Create a starter YAML config file. | `-c, --config <path>` (default: `yamlcdk.yml`) |
-| `validate` | Load and validate a YAML config file. | `-c, --config <path>` (default: `yamlcdk.yml`) |
+| `init` | Create a starter config file. | `-c, --config <path>` (default: `yamlcdk.yml`), `-f, --format <format>` (`yamlcdk` or `cloudformation`, default: `yamlcdk`) |
+| `validate` | Load and validate a config file. | `-c, --config <path>` (default: `yamlcdk.yml`) |
 | `synth` | Synthesize a CloudFormation template and print it to stdout. | shared AWS flags |
 | `bootstrap` | Bootstrap the target CDK environment. | shared AWS flags |
 | `diff` | Show the CDK diff for the stack. | shared AWS flags |
@@ -83,6 +96,10 @@ Command-specific flags:
 - `remove --force` - skip the destroy confirmation prompt. Use this in CI or any non-interactive shell.
 
 ## Config file shape
+
+yamlcdk supports two input formats. The format is auto-detected based on file content.
+
+### yamlcdk format
 
 `yamlcdk` uses YAML. `examples/service.yml` shows a fuller sample, and `src/config/schema.ts` is the exact schema.
 
@@ -172,7 +189,7 @@ Useful fields:
 - `timeout` / `memorySize` - optional Lambda settings
 - `environment` - optional Lambda environment variables
 - `iam` - either `iam.statements` keys or a single IAM role ARN
-- `build.mode` - `typescript` (default) or `external`
+- `build.mode` - `typescript` (default), `external`, or `none` (skip build, use handler path as-is)
 - `build.command`, `build.cwd`, `build.handler` - external build settings
 - `events` - see the event types below
 - `restApi.apiKeyRequired` - per-function REST API key requirement when the global provider setting is not set
@@ -421,6 +438,98 @@ functions:
 
 Each entry is either a `schedule` rule or an `eventPattern` rule.
 
+### CloudFormation format
+
+yamlcdk can also accept native CloudFormation YAML templates as input. This is useful when you have existing CloudFormation templates and want to manage them through yamlcdk's deployment workflow.
+
+A CloudFormation template is auto-detected when the file contains `AWSTemplateFormatVersion` or a `Resources` section with `Type: AWS::*` entries.
+
+#### Metadata section
+
+Service-level config that yamlcdk needs (service name, stage, region, etc.) is provided in the `Metadata.yamlcdk` section. If omitted, defaults are used (service name derived from filename, stage `dev`, region `us-east-1`).
+
+```yaml
+AWSTemplateFormatVersion: "2010-09-09"
+Metadata:
+  yamlcdk:
+    service: my-service
+    stage: dev
+    region: us-east-1
+    tags:
+      Team: platform
+    s3:
+      cleanupRoleArn: arn:aws:iam::123456789012:role/MyS3CleanupRole
+    deployment:
+      fileAssetsBucketName: my-cdk-assets
+      useCliCredentials: true
+```
+
+All `Metadata.yamlcdk` fields are optional:
+
+- `service` - service name (defaults to filename)
+- `stage` - logical stage name (defaults to `dev`)
+- `region` - AWS region (defaults to `AWS_REGION` or `us-east-1`)
+- `account`, `profile` - AWS account and profile
+- `tags` - extra stack tags
+- `s3.cleanupRoleArn` - required if using `autoDeleteObjects`
+- `restApi.cloudWatchRoleArn` - existing API Gateway CloudWatch role
+- `deployment` - same advanced deployment overrides as the yamlcdk format
+
+#### Build handling
+
+For each `AWS::Lambda::Function`, yamlcdk checks if the handler source file exists as TypeScript (e.g. `src/handlers/hello.ts` for `Handler: src/handlers/hello.handler`). If it does, the function is compiled with `tsc` (same as the yamlcdk format). If no `.ts` file is found, the handler path is used as-is (`build.mode: none`), assuming the code is already built or will be provided at the handler location.
+
+#### Supported resource types
+
+The following CloudFormation resource types are extracted and mapped to the yamlcdk compiler model:
+
+| CloudFormation Type | What it maps to |
+| --- | --- |
+| `AWS::Lambda::Function` | Lambda functions (handler, runtime, timeout, memorySize, environment) |
+| `AWS::S3::Bucket` | S3 buckets (versioning, notification config) |
+| `AWS::DynamoDB::Table` | DynamoDB tables (keys, billing mode, streams) |
+| `AWS::SQS::Queue` | SQS queues (visibility timeout) |
+| `AWS::SNS::Topic` | SNS topics |
+| `AWS::SNS::Subscription` | SNS subscriptions (sqs and lambda protocols) |
+| `AWS::Lambda::EventSourceMapping` | SQS and DynamoDB stream event triggers on functions |
+| `AWS::Events::Rule` | EventBridge schedule and event pattern rules targeting functions |
+| `AWS::ApiGatewayV2::Api/Route/Integration` | HTTP API routes targeting functions |
+
+Unsupported resource types in the template are silently ignored.
+
+#### Cross-resource references
+
+CloudFormation intrinsic functions are supported for cross-resource wiring:
+
+- `!Ref LogicalId` — reference another resource
+- `!GetAtt LogicalId.Attribute` — get a resource attribute
+- `!Sub`, `!Join`, `!Select`, `!If`, `!Equals`, etc. — parsed but only `!Ref` and `!GetAtt` are used for resource resolution
+
+For example, an `EventSourceMapping` uses `!Ref` and `!GetAtt` to link a Lambda function to an SQS queue:
+
+```yaml
+Resources:
+  HelloFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      Handler: src/hello.handler
+      Runtime: nodejs20.x
+
+  JobsQueue:
+    Type: AWS::SQS::Queue
+
+  HelloSqsTrigger:
+    Type: AWS::Lambda::EventSourceMapping
+    Properties:
+      FunctionName: !Ref HelloFunction
+      EventSourceArn: !GetAtt JobsQueue.Arn
+      BatchSize: 10
+```
+
+#### Example
+
+See `examples/cloudformation.yml` for a complete CloudFormation template demonstrating all supported resource types and event wiring patterns.
+
 ## Deployment overrides
 
 Use `provider.deployment` when you need to control how CDK assets and deployment roles are handled.
@@ -448,8 +557,9 @@ Supported fields:
 
 Important rules:
 
-- If you set asset locations (`fileAssetsBucketName` or `imageAssetsRepositoryName`) without role overrides, yamlcdk infers `useCliCredentials: true`.
-- `useCliCredentials: true` cannot be combined with `deployRoleArn` or `cloudFormationExecutionRoleArn`.
+- If you set asset locations (`fileAssetsBucketName` or `imageAssetsRepositoryName`) without `deployRoleArn`, yamlcdk infers `useCliCredentials: true`.
+- `useCliCredentials: true` cannot be combined with `deployRoleArn`.
+- `useCliCredentials: true` can be combined with `cloudFormationExecutionRoleArn` when you want the CLI credentials to publish assets and start the deployment, but CloudFormation to execute the stack operation with that role.
 - `cloudFormationServiceRoleArn` cannot be combined with `deployRoleArn` or `cloudFormationExecutionRoleArn`.
 - `cloudFormationServiceRoleArn` is for template-only stacks. It is not supported for stacks that synthesize CDK asset metadata, such as Lambda code or container image assets.
 - If you use explicit deployment infrastructure, yamlcdk disables the bootstrap version rule unless you set `requireBootstrap` yourself.
@@ -472,6 +582,7 @@ When adapting `examples/service.yml`, choose one supported deployment mode at a 
 
 ## More reading
 
-- `examples/service.yml` - more complete yamlcdk config example
-- `src/config/schema.ts` - exact config schema
+- `examples/service.yml` - yamlcdk format config example
+- `examples/cloudformation.yml` - CloudFormation format config example
+- `src/config/schema.ts` - exact yamlcdk config schema
 - [ARCHITECTURE.md](./ARCHITECTURE.md) and [DEVELOPER.md](./DEVELOPER.md) - maintainer and contributor material
