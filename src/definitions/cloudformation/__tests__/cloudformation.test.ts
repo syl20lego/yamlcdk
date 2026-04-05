@@ -17,15 +17,7 @@ import {
   SNS_CONFIG,
 } from "../../../compiler/plugins/native-domain-configs.js";
 import { definitionRegistry } from "../../registry.js";
-
-// ─── Helper ─────────────────────────────────────────────────
-
-function writeTmpYaml(content: string, filename = "template.yml"): string {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "yamlcdk-cfn-test-"));
-  const filePath = path.join(dir, filename);
-  fs.writeFileSync(filePath, content, "utf8");
-  return filePath;
-}
+import {writeTmpYaml} from "../../test-utils/e2e.js";
 
 // ─── CloudFormation YAML parsing ────────────────────────────
 
@@ -177,20 +169,6 @@ describe("definition registry", () => {
     );
     const plugin = definitionRegistry.resolve(cfnPath);
     expect(plugin.formatName).toBe("cloudformation");
-  });
-
-  test("resolves yamlcdk files to yamlcdk plugin", () => {
-    const yamlcdkPath = writeTmpYaml(
-      "service: my-service\nfunctions: {}",
-    );
-    const plugin = definitionRegistry.resolve(yamlcdkPath);
-    expect(plugin.formatName).toBe("yamlcdk");
-  });
-
-  test("contains both plugins", () => {
-    const formats = definitionRegistry.all().map((p) => p.formatName);
-    expect(formats).toContain("cloudformation");
-    expect(formats).toContain("yamlcdk");
   });
 });
 

@@ -14,6 +14,7 @@ import type {
 } from "../../compiler/model.js";
 import { parseServiceModel } from "../../compiler/model.js";
 import { DomainConfigs } from "../../compiler/plugins/index.js";
+import path from "node:path";
 import {
   S3_CONFIG,
   DYNAMODB_CONFIG,
@@ -236,7 +237,9 @@ export const yamlcdkDefinitionPlugin: DefinitionPlugin = {
   formatName: "yamlcdk",
 
   canLoad(filePath: string): boolean {
-    return /\.(yml|yaml)$/i.test(filePath);
+    if (!/\.(yml|yaml)$/i.test(filePath)) return false;
+    const basename = path.basename(filePath).toLowerCase();
+    return basename !== "serverless.yml" && basename !== "serverless.yaml";
   },
 
   load(filePath: string): ServiceModel {

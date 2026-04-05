@@ -1,0 +1,36 @@
+service: demo-api
+provider:
+  name: aws
+  stage: ${opt:stage, 'dev'}
+  region: us-east-1
+  runtime: nodejs20.x
+  tags:
+    Team: platform
+
+functions:
+  hello:
+    handler: src/handlers/hello.handler
+    timeout: 10
+    memorySize: 256
+    environment:
+      STAGE: ${sls:stage}
+    url:
+      cors: true
+    events:
+      - http: GET /hello
+      - httpApi:
+          method: POST
+          path: /hello
+      - sqs:
+          arn: !GetAtt JobsQueue.Arn
+          batchSize: 10
+      - sns: dispatch
+      - s3: uploads
+      - schedule: rate(1 hour)
+
+resources:
+  Resources:
+    JobsQueue:
+      Type: AWS::SQS::Queue
+      Properties:
+        VisibilityTimeout: 30

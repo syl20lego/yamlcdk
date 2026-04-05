@@ -127,6 +127,13 @@ export const cloudformationDefinitionPlugin: DefinitionPlugin = {
     if (!/\.(yml|yaml)$/i.test(filePath)) return false;
     try {
       const head = fs.readFileSync(filePath, "utf8").slice(0, 4096);
+      const looksLikeServerless =
+        /^\s*service\s*:/m.test(head) &&
+        (/^\s*provider\s*:\s*aws\s*$/m.test(head) ||
+          (/^\s*provider\s*:/m.test(head) && /^\s+name\s*:\s*aws\s*$/m.test(head)));
+      if (looksLikeServerless && !/^\s*AWSTemplateFormatVersion\s*:/m.test(head)) {
+        return false;
+      }
       // Require AWSTemplateFormatVersion at top level, or a Resources block
       // with indented Type: AWS::* entries (rules out yamlcdk files that
       // might mention AWS:: in string values or comments)

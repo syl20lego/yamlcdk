@@ -1,0 +1,211 @@
+import { describe, expect, test } from "vitest";
+import { definitionRegistry } from "../../registry.js";
+import { writeTmpYaml } from "../../test-utils/e2e.js";
+import { parseCfnYaml } from "../../cloudformation/index.js";
+import {
+  adaptServerlessConfig,
+  resolveServerlessVariables,
+  serverlessDefinitionPlugin,
+  toServerlessFunctionLogicalId,
+} from "../index.js";
+import {
+  S3_CONFIG,
+  SNS_CONFIG,
+  SQS_CONFIG,
+} from "../../../compiler/plugins/native-domain-configs.js";
+
+describe("serverless definition plugin", () => {
+  test("formatName is serverless", () => {
+    expect(serverlessDefinitionPlugin.formatName).toBe("serverless");
+  });
+
+  test("canLoad matches serverless files and rejects non-YAML files", () => {
+    const serverlessPath = writeTmpYaml(
+      "service: demo\nprovider:\n  name: aws\nfunctions: {}\n",
+      "serverless.yml",
+    );
+    const otherPath = writeTmpYaml('{"service":"demo"}', "serverless.json");
+
+    expect(serverlessDefinitionPlugin.canLoad(serverlessPath)).toBe(true);
+    expect(serverlessDefinitionPlugin.canLoad(otherPath)).toBe(false);
+  });
+
+  test("generateStarter returns valid Serverless YAML content", () => {
+    const content = serverlessDefinitionPlugin.generateStarter!();
+    expect(content).toContain("service:");
+    expect(content).toContain("provider:");
+    expect(content).toContain("name: aws");
+    expect(content).toContain("resources:");
+  });
+});
+
+describe("resolveServerlessVariables", () => {
+  test("resolves self/sls/aws variables, fallbacks, and leaves Fn::Sub placeholders intact", () => {
+    const resolved = resolveServerlessVariables(
+      parseCfnYaml(`
+service: demo
+provider:
+  name: aws
+  stage: \${opt:stage, 'prod'}
+  region: us-east-1
+custom:
+  label: \${self:service}-\${sls:stage}-\${aws:region}
+resources:
+  Outputs:
+    DemoOutput:
+      Value: !Sub arn:\${AWS::Region}:\${self:service}
+`),
+    ) as Record<string, unknown>;
+
+    const custom = resolved.custom as Record<string, unknown>;
+    const resources = resolved.resources as Record<string, unknown>;
+    const outputs = (resources.Outputs as Record<string, unknown>).DemoOutput as Record<
+      string,
+      unknown
+    >;
+
+    expect((resolved.provider as Record<string, unknown>).stage).toBe("prod");
+    expect(custom.label).toBe("demo-prod-us-east-1");
+    expect(outputs.Value).toEqual({ "Fn::Sub": "arn:${AWS::Region}:demo" });
+  });
+});
+
+describe("adaptServerlessConfig", () => {
+  test("adapts supported top-level Serverless fields into the canonical model", () => {
+    const model = adaptServerlessConfig(
+      parseCfnYaml(`
+service: demo
+provider:
+  name: aws
+  stage: prod
+  region: eu-west-1
+  runtime: nodejs22.x
+  timeout: 20
+  memorySize: 512
+functions:
+  hello:
+    handler: src/hello.handler
+    environment:
+      STAGE: \${sls:stage}
+    url:
+      cors: true
+    events:
+      - http: GET hello
+      - httpApi:
+          method: post
+          path: /hello
+      - schedule: rate(5 minutes)
+      - s3: uploads
+      - sns: dispatch
+`),
+      "serverless.yml",
+    );
+
+    expect(model.service).toBe("demo");
+    expect(model.stackName).toBe("demo-prod");
+    expect(model.provider.stage).toBe("prod");
+    expect(model.provider.region).toBe("eu-west-1");
+    expect(model.functions.hello.runtime).toBe("nodejs22.x");
+    expect(model.functions.hello.timeout).toBe(20);
+    expect(model.functions.hello.memorySize).toBe(512);
+    expect(model.functions.hello.environment?.STAGE).toBe("prod");
+    expect(model.functions.hello.url).toEqual({
+      authType: "NONE",
+      invokeMode: "BUFFERED",
+      cors: {
+        allowHeaders: [
+          "Content-Type",
+          "X-Amz-Date",
+          "Authorization",
+          "X-Api-Key",
+          "X-Amz-Security-Token",
+        ],
+        allowedMethods: ["*"],
+        allowOrigins: ["*"],
+      },
+    });
+    expect(model.functions.hello.events.map((event) => event.type).sort()).toEqual([
+      "eventbridge",
+      "http",
+      "rest",
+      "s3",
+      "sns",
+    ]);
+    expect(model.domainConfigs.require(S3_CONFIG).buckets.uploads).toEqual({});
+    expect(model.domainConfigs.require(SNS_CONFIG).topics.dispatch).toEqual({});
+  });
+
+  test("reuses CloudFormation adaptation for resources.Resources and merges onto top-level functions", () => {
+    const model = adaptServerlessConfig(
+      parseCfnYaml(`
+service: demo
+provider:
+  name: aws
+functions:
+  worker:
+    handler: src/worker.handler
+    events:
+      - sqs:
+          arn: !GetAtt JobsQueue.Arn
+          batchSize: 5
+resources:
+  Resources:
+    JobsQueue:
+      Type: AWS::SQS::Queue
+      Properties:
+        VisibilityTimeout: 45
+    WorkerFunctionUrl:
+      Type: AWS::Lambda::Url
+      Properties:
+        TargetFunctionArn: !GetAtt WorkerLambdaFunction.Arn
+        AuthType: NONE
+`),
+      "serverless.yml",
+    );
+
+    expect(toServerlessFunctionLogicalId("worker")).toBe("WorkerLambdaFunction");
+    expect(model.functions.worker.url?.authType).toBe("NONE");
+    expect(model.functions.worker.events).toContainEqual({
+      type: "sqs",
+      queue: "JobsQueue",
+      batchSize: 5,
+    });
+    expect(model.domainConfigs.require(SQS_CONFIG).queues.JobsQueue.visibilityTimeout).toBe(
+      45,
+    );
+  });
+
+  test("rejects custom resources that override generated function logical ids", () => {
+    expect(() =>
+      adaptServerlessConfig(
+        parseCfnYaml(`
+service: demo
+provider:
+  name: aws
+functions:
+  worker:
+    handler: src/worker.handler
+resources:
+  Resources:
+    WorkerLambdaFunction:
+      Type: AWS::Lambda::Function
+      Properties:
+        Handler: index.handler
+        Runtime: nodejs20.x
+`),
+        "serverless.yml",
+      ),
+    ).toThrow(/conflicts with a Serverless-generated function logical ID/);
+  });
+});
+
+describe("definition registry", () => {
+  test("resolves serverless.yml to the serverless plugin", () => {
+    const serverlessPath = writeTmpYaml(
+      "service: demo\nprovider:\n  name: aws\nfunctions: {}\n",
+      "serverless.yml",
+    );
+    const plugin = definitionRegistry.resolve(serverlessPath);
+    expect(plugin.formatName).toBe("serverless");
+  });
+});

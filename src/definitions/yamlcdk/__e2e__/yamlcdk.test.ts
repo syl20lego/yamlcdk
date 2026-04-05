@@ -1,14 +1,28 @@
 import { Match } from "aws-cdk-lib/assertions";
 import { describe, expect, test } from "vitest";
 import {
-  buildDefinitionFromYaml,
-  firstResourceOfType,
-  resolveDefinitionFromYaml,
-  type ResourceDefinition,
+    buildDefinitionFromYaml,
+    firstResourceOfType,
+    resolveDefinitionFromYaml,
+    type ResourceDefinition, writeTmpYaml,
 } from "../../test-utils/e2e.js";
+import {definitionRegistry} from "../../registry.js";
 
 describe("yamlcdk definition e2e", () => {
-  describe("service and provider section", () => {
+
+    describe("definition registry", () => {
+
+        test("resolves yamlcdk files to yamlcdk plugin", () => {
+            const yamlcdkPath = writeTmpYaml(
+                "service: my-service\nfunctions: {}",
+            );
+            const plugin = definitionRegistry.resolve(yamlcdkPath);
+            expect(plugin.formatName).toBe("yamlcdk");
+        });
+
+    });
+
+    describe("service and provider section", () => {
     test("applies provider defaults when the section is omitted", () => {
       const { plugin, model, template } = buildDefinitionFromYaml(`
 service: minimal-service

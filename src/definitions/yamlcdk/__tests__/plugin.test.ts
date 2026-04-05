@@ -16,7 +16,7 @@ describe("yamlcdk definition plugin", () => {
     expect(yamlcdkDefinitionPlugin.canLoad("yamlcdk.yml")).toBe(true);
     expect(yamlcdkDefinitionPlugin.canLoad("config.yaml")).toBe(true);
     expect(yamlcdkDefinitionPlugin.canLoad("config.json")).toBe(false);
-    expect(yamlcdkDefinitionPlugin.canLoad("serverless.yml")).toBe(true);
+    expect(yamlcdkDefinitionPlugin.canLoad("serverless.yml")).toBe(false);
   });
 
   test("generateStarter returns valid YAML content", () => {

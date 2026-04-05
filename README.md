@@ -2,9 +2,10 @@
 
 `yamlcdk` ("AWS YAML") is a CLI for defining AWS infrastructure in YAML, turning it into AWS CDK/CloudFormation stacks, and running the usual deployment workflow from the command line: initialize config, validate it, synthesize a template, bootstrap an environment, diff changes, deploy, and remove stacks.
 
-yamlcdk supports two input formats:
+yamlcdk supports three input formats:
 
 - **yamlcdk format** — a concise, purpose-built YAML schema (see `examples/service.yml`)
+- **Serverless Framework YAML** — `serverless.yml` for AWS, mapped onto yamlcdk's current compiler model (see `examples/serverless.yml`)
 - **CloudFormation YAML** — native CloudFormation templates with `AWSTemplateFormatVersion` (see `examples/cloudformation.yml`)
 
 The correct format is detected automatically based on file content. This README is intentionally for CLI users only. Maintainer and contributor material belongs in [ARCHITECTURE.md](./ARCHITECTURE.md) and [DEVELOPER.md](./DEVELOPER.md), not here.
@@ -13,7 +14,7 @@ The correct format is detected automatically based on file content. This README 
 
 - Node.js 20+
 - AWS credentials or profile access for the account you plan to target
-- A config file: either a yamlcdk YAML file (e.g. `yamlcdk.yml`) or a CloudFormation YAML template
+- A config file: yamlcdk YAML (`yamlcdk.yml`), Serverless Framework YAML (`serverless.yml`), or a CloudFormation YAML template
 
 ## Install and run
 
@@ -65,15 +66,23 @@ yamlcdk validate -c template.yml
 yamlcdk synth -c template.yml --region us-east-1 > stack.template.json
 ```
 
+To start with a Serverless Framework config instead:
+
+```bash
+yamlcdk init -c serverless.yml --format serverless
+yamlcdk validate -c serverless.yml
+yamlcdk synth -c serverless.yml --region us-east-1 > stack.template.json
+```
+
 `bootstrap` is usually a one-time step per account/region when you are using the default CDK deployment mode.
 
-You can also start from `examples/service.yml` (yamlcdk format) or `examples/cloudformation.yml` (CloudFormation format) for broader samples.
+You can also start from `examples/service.yml` (yamlcdk format), `examples/serverless.yml` (Serverless format), or `examples/cloudformation.yml` (CloudFormation format) for broader samples.
 
 ## Commands
 
 | Command | What it does | Options |
 | --- | --- | --- |
-| `init` | Create a starter config file. | `-c, --config <path>` (default: `yamlcdk.yml`), `-f, --format <format>` (`yamlcdk` or `cloudformation`, default: `yamlcdk`) |
+| `init` | Create a starter config file. | `-c, --config <path>` (default: `yamlcdk.yml`), `-f, --format <format>` (`yamlcdk`, `serverless`, or `cloudformation`, default: `yamlcdk`) |
 | `validate` | Load and validate a config file. | `-c, --config <path>` (default: `yamlcdk.yml`) |
 | `synth` | Synthesize a CloudFormation template and print it to stdout. | shared AWS flags |
 | `bootstrap` | Bootstrap the target CDK environment. | shared AWS flags |
@@ -97,7 +106,7 @@ Command-specific flags:
 
 ## Config file shape
 
-yamlcdk supports two input formats. The format is auto-detected based on file content.
+yamlcdk supports three input formats. The format is auto-detected based on file content.
 
 ### yamlcdk format
 
@@ -480,6 +489,68 @@ functions:
 
 Each entry is either a `schedule` rule or an `eventPattern` rule.
 
+### Serverless Framework format
+
+yamlcdk can also load AWS `serverless.yml` files and adapt the supported subset onto the same compiler model used by yamlcdk format.
+
+Detection is aimed at real Serverless AWS configs (`service`, `provider.name: aws`) and is intended for `serverless.yml` / `serverless.yaml`.
+
+Supported top-level surface today:
+
+- `service`
+- `provider.name`, `provider.stage`, `provider.region`, `provider.runtime`, `provider.timeout`, `provider.memorySize`, `provider.stackName`, `provider.profile`, `provider.tags`
+- `functions.*.handler`, `runtime`, `timeout`, `memorySize`, `environment`, `role`, `url`
+- function events: `http`, `httpApi`, `schedule`, `s3`, `sns`, `sqs`, `stream` (DynamoDB only), and `eventBridge`
+- raw `resources.Resources` / `resources.Outputs`
+
+Supported Serverless variable sources today:
+
+- `${self:...}`
+- `${sls:stage}`
+- `${sls:service}`
+- `${aws:region}`
+- `${aws:accountId}` when the account is available via config or environment
+- `${opt:...}` only when used with a fallback, for example `${opt:stage, 'dev'}`
+
+Example:
+
+```yaml
+service: demo-api
+provider:
+  name: aws
+  stage: ${opt:stage, 'dev'}
+  region: us-east-1
+  runtime: nodejs20.x
+
+functions:
+  hello:
+    handler: src/handlers/hello.handler
+    environment:
+      STAGE: ${sls:stage}
+    url:
+      cors: true
+    events:
+      - http: GET /hello
+      - httpApi: POST /hello
+      - sqs:
+          arn: !GetAtt JobsQueue.Arn
+          batchSize: 10
+
+resources:
+  Resources:
+    JobsQueue:
+      Type: AWS::SQS::Queue
+      Properties:
+        VisibilityTimeout: 30
+```
+
+Notes:
+
+- yamlcdk keeps Serverless support scoped to the current compiler model, not the full Serverless Framework surface.
+- `resources.Resources` are adapted through the existing CloudFormation path and merged into the Serverless-derived model.
+- Top-level Serverless config is primary; custom resources may augment generated functions and managed resources, but not override generated function logical IDs.
+- External SQS/SNS/DynamoDB event targets are not supported yet by the current yamlcdk domain model.
+
 ### CloudFormation format
 
 yamlcdk can also accept native CloudFormation YAML templates as input. This is useful when you have existing CloudFormation templates and want to manage them through yamlcdk's deployment workflow.
@@ -628,6 +699,7 @@ When adapting `examples/service.yml`, choose one supported deployment mode at a 
 ## More reading
 
 - `examples/service.yml` - yamlcdk format config example
+- `examples/serverless.yml` - Serverless Framework format config example
 - `examples/cloudformation.yml` - CloudFormation format config example
 - `src/config/schema.ts` - exact yamlcdk config schema
 - [ARCHITECTURE.md](./ARCHITECTURE.md) and [DEVELOPER.md](./DEVELOPER.md) - maintainer and contributor material
