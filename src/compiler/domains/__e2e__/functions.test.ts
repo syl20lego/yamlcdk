@@ -42,6 +42,45 @@ describe("functions domain e2e", () => {
     );
   });
 
+  test("creates a public lambda function URL with CORS and invoke permissions", () => {
+    const { template } = synthServiceConfig({
+      functions: {
+        hello: functionConfig({
+          url: {
+            authType: "NONE",
+            invokeMode: "RESPONSE_STREAM",
+            cors: {
+              allowCredentials: true,
+              allowHeaders: ["Content-Type"],
+              allowedMethods: ["GET", "POST"],
+              allowOrigins: ["https://example.com"],
+              exposeHeaders: ["X-Trace-Id"],
+              maxAge: 300,
+            },
+          },
+        }),
+      },
+    });
+
+    template.hasResourceProperties(
+      "AWS::Lambda::Url",
+      Match.objectLike({
+        AuthType: "NONE",
+        InvokeMode: "RESPONSE_STREAM",
+        Cors: Match.objectLike({
+          AllowCredentials: true,
+          AllowHeaders: ["Content-Type"],
+          AllowMethods: ["GET", "POST"],
+          AllowOrigins: ["https://example.com"],
+          ExposeHeaders: ["X-Trace-Id"],
+          MaxAge: 300,
+        }),
+      }),
+    );
+    template.resourceCountIs("AWS::Lambda::Permission", 2);
+    template.hasOutput("helloFunctionUrl", {});
+  });
+
   test("supports a direct role ARN without creating a managed IAM role", () => {
     const { template } = synthServiceConfig({
       provider: {

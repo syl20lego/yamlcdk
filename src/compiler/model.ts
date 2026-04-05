@@ -70,6 +70,47 @@ export const buildConfigSchema = z.object({
 
 export type BuildConfig = z.infer<typeof buildConfigSchema>;
 
+export const functionUrlAuthTypeSchema = z.enum(["AWS_IAM", "NONE"]);
+
+export type FunctionUrlAuthType = z.infer<typeof functionUrlAuthTypeSchema>;
+
+export const functionUrlInvokeModeSchema = z.enum([
+  "BUFFERED",
+  "RESPONSE_STREAM",
+]);
+
+export type FunctionUrlInvokeMode = z.infer<typeof functionUrlInvokeModeSchema>;
+
+export const functionUrlHttpMethodSchema = z.enum([
+  "GET",
+  "PUT",
+  "HEAD",
+  "POST",
+  "DELETE",
+  "PATCH",
+  "OPTIONS",
+  "*",
+]);
+
+export const functionUrlCorsSchema = z.object({
+  allowCredentials: z.boolean().optional(),
+  allowHeaders: z.array(z.string().min(1)).optional(),
+  allowedMethods: z.array(functionUrlHttpMethodSchema).optional(),
+  allowOrigins: z.array(z.string().min(1)).optional(),
+  exposeHeaders: z.array(z.string().min(1)).optional(),
+  maxAge: z.number().int().min(0).optional(),
+});
+
+export type FunctionUrlCorsConfig = z.infer<typeof functionUrlCorsSchema>;
+
+export const functionUrlConfigSchema = z.object({
+  authType: functionUrlAuthTypeSchema,
+  cors: functionUrlCorsSchema.optional(),
+  invokeMode: functionUrlInvokeModeSchema,
+});
+
+export type FunctionUrlConfig = z.infer<typeof functionUrlConfigSchema>;
+
 /**
  * Model-level event declarations.
  *
@@ -126,6 +167,7 @@ export const functionModelSchema = z.object({
   memorySize: z.number().int().min(128).max(10240).optional(),
   environment: z.record(z.string(), z.string()).optional(),
   iam: z.array(z.string()).optional(),
+  url: functionUrlConfigSchema.optional(),
   build: buildConfigSchema.optional(),
   events: z.array(eventDeclarationSchema),
 });

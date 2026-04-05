@@ -3,6 +3,7 @@ import { DomainConfigs } from "../plugins/index.js";
 import {
   eventDeclarationSchema,
   functionModelSchema,
+  functionUrlConfigSchema,
   iamStatementSchema,
   parseServiceModel,
   providerConfigSchema,
@@ -61,6 +62,23 @@ describe("model Zod schemas", () => {
         events: [],
       }),
     ).toThrow();
+  });
+
+  test("functionUrlConfigSchema validates auth, cors, and invoke mode", () => {
+    const result = functionUrlConfigSchema.parse({
+      authType: "NONE",
+      invokeMode: "RESPONSE_STREAM",
+      cors: {
+        allowCredentials: true,
+        allowedMethods: ["GET", "*"],
+        allowOrigins: ["https://example.com"],
+        maxAge: 300,
+      },
+    });
+
+    expect(result.authType).toBe("NONE");
+    expect(result.invokeMode).toBe("RESPONSE_STREAM");
+    expect(result.cors?.allowedMethods).toEqual(["GET", "*"]);
   });
 
   test("eventDeclarationSchema validates http event", () => {

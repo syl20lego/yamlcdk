@@ -6,7 +6,12 @@
  */
 
 import type { DefinitionPlugin } from "../../compiler/plugins/index.js";
-import type { ServiceModel, EventDeclaration, FunctionModel } from "../../compiler/model.js";
+import type {
+  ServiceModel,
+  EventDeclaration,
+  FunctionModel,
+  FunctionUrlConfig,
+} from "../../compiler/model.js";
 import { parseServiceModel } from "../../compiler/model.js";
 import { DomainConfigs } from "../../compiler/plugins/index.js";
 import {
@@ -86,6 +91,18 @@ function adaptEvents(
   return events;
 }
 
+function adaptFunctionUrl(
+  fn: NormalizedServiceConfig["functions"][string],
+): FunctionUrlConfig | undefined {
+  if (!fn.url) return undefined;
+
+  return {
+    authType: fn.url.authType ?? "AWS_IAM",
+    cors: fn.url.cors,
+    invokeMode: fn.url.invokeMode ?? "BUFFERED",
+  };
+}
+
 function adaptFunctions(
   config: NormalizedServiceConfig,
 ): Record<string, FunctionModel> {
@@ -100,6 +117,7 @@ function adaptFunctions(
       memorySize: fn.memorySize,
       environment: fn.environment,
       iam: fn.iam,
+      url: adaptFunctionUrl(fn),
       build: fn.build,
       events: adaptEvents(fn, globalRestApiKeyRequired),
     };
@@ -164,6 +182,13 @@ functions:
     memorySize: 256
     environment:
       STAGE: dev
+    url:
+      authType: NONE
+      cors:
+        allowOrigins:
+          - https://example.com
+        allowedMethods:
+          - GET
     events:
       http:
         - method: GET

@@ -265,6 +265,51 @@ Resources:
     );
   });
 
+  test("extracts Lambda function URLs into function config", () => {
+    const parsed = parseCfnYaml(`
+AWSTemplateFormatVersion: "2010-09-09"
+Metadata:
+  yamlcdk:
+    service: demo
+Resources:
+  HelloFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      Handler: src/hello.handler
+  HelloFunctionUrl:
+    Type: AWS::Lambda::Url
+    Properties:
+      TargetFunctionArn: !GetAtt HelloFunction.Arn
+      AuthType: NONE
+      InvokeMode: RESPONSE_STREAM
+      Cors:
+        AllowCredentials: true
+        AllowHeaders:
+          - Content-Type
+        AllowMethods:
+          - GET
+        AllowOrigins:
+          - https://example.com
+        ExposeHeaders:
+          - X-Trace-Id
+        MaxAge: 300
+`);
+    const model = adaptCfnTemplate(parsed, "t.yml");
+
+    expect(model.functions.HelloFunction.url).toEqual({
+      authType: "NONE",
+      invokeMode: "RESPONSE_STREAM",
+      cors: {
+        allowCredentials: true,
+        allowHeaders: ["Content-Type"],
+        allowedMethods: ["GET"],
+        allowOrigins: ["https://example.com"],
+        exposeHeaders: ["X-Trace-Id"],
+        maxAge: 300,
+      },
+    });
+  });
+
   test("extracts S3 buckets", () => {
     const parsed = parseCfnYaml(`
 AWSTemplateFormatVersion: "2010-09-09"
@@ -597,6 +642,30 @@ Resources:
       e.type === "http" ? e.method : "",
     );
     expect(methods.sort()).toEqual(["GET", "POST"]);
+  });
+
+  test("rejects Lambda function URLs with Qualifier", () => {
+    const parsed = parseCfnYaml(`
+AWSTemplateFormatVersion: "2010-09-09"
+Metadata:
+  yamlcdk:
+    service: demo
+Resources:
+  HelloFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      Handler: src/hello.handler
+  HelloFunctionUrl:
+    Type: AWS::Lambda::Url
+    Properties:
+      TargetFunctionArn: !GetAtt HelloFunction.Arn
+      AuthType: NONE
+      Qualifier: live
+`);
+
+    expect(() => adaptCfnTemplate(parsed, "t.yml")).toThrow(
+      "does not support yet",
+    );
   });
 
   test("wires multiple event types to the same function", () => {

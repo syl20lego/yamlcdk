@@ -100,6 +100,47 @@ Resources:
         }),
       );
     });
+
+    test("creates a lambda function URL from AWS::Lambda::Url", () => {
+      const { model, template } = buildDefinitionFromYaml(`
+AWSTemplateFormatVersion: "2010-09-09"
+Metadata:
+  yamlcdk:
+    service: function-url
+    region: us-east-1
+Resources:
+  WorkerFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      Handler: src/worker.handler
+  WorkerFunctionUrl:
+    Type: AWS::Lambda::Url
+    Properties:
+      TargetFunctionArn: !GetAtt WorkerFunction.Arn
+      AuthType: NONE
+      Cors:
+        AllowMethods:
+          - GET
+        AllowOrigins:
+          - https://example.com
+`);
+
+      expect(model.functions.WorkerFunction.url).toEqual({
+        authType: "NONE",
+        invokeMode: "BUFFERED",
+        cors: {
+          allowedMethods: ["GET"],
+          allowOrigins: ["https://example.com"],
+        },
+      });
+      template.hasResourceProperties(
+        "AWS::Lambda::Url",
+        Match.objectLike({
+          AuthType: "NONE",
+        }),
+      );
+      template.hasOutput("WorkerFunctionFunctionUrl", {});
+    });
   });
 
   describe("storage resources", () => {
@@ -525,6 +566,28 @@ Resources:
       Handler: src/broken.handler
 `),
       ).toThrow();
+    });
+
+    test("rejects lambda function URLs that use Qualifier", () => {
+      expect(() =>
+        buildDefinitionFromYaml(`
+AWSTemplateFormatVersion: "2010-09-09"
+Metadata:
+  yamlcdk:
+    service: invalid-function-url
+Resources:
+  WorkerFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      Handler: src/worker.handler
+  WorkerFunctionUrl:
+    Type: AWS::Lambda::Url
+    Properties:
+      TargetFunctionArn: !GetAtt WorkerFunction.Arn
+      AuthType: NONE
+      Qualifier: live
+`),
+      ).toThrow("does not support yet");
     });
   });
 });

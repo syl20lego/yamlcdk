@@ -312,6 +312,48 @@ Fields:
 
 Use `functions.<name>.events.sns` when you want a Lambda to subscribe to a topic.
 
+### `functions.<name>.url`
+
+Creates a Lambda Function URL for a function:
+
+```yaml
+functions:
+  hello:
+    handler: src/handlers/hello.handler
+    url:
+      authType: NONE
+      invokeMode: RESPONSE_STREAM
+      cors:
+        allowedMethods:
+          - GET
+          - POST
+        allowOrigins:
+          - https://example.com
+        allowHeaders:
+          - Content-Type
+        exposeHeaders:
+          - X-Trace-Id
+        allowCredentials: true
+        maxAge: 300
+```
+
+Fields:
+
+- `authType` - `AWS_IAM` or `NONE` (defaults to `AWS_IAM`)
+- `invokeMode` - `BUFFERED` or `RESPONSE_STREAM` (defaults to `BUFFERED`)
+- `cors.allowCredentials` - include credentials in CORS requests
+- `cors.allowHeaders` - allowed request headers
+- `cors.allowedMethods` - allowed methods: `GET`, `PUT`, `HEAD`, `POST`, `DELETE`, `PATCH`, `OPTIONS`, or `*`
+- `cors.allowOrigins` - allowed origins
+- `cors.exposeHeaders` - response headers exposed to callers
+- `cors.maxAge` - preflight cache duration in seconds
+
+Notes:
+
+- Function URLs are configured per function, not under `events`.
+- yamlcdk currently supports direct function URLs only; alias-qualified URLs are out of scope.
+- Public URLs (`authType: NONE`) synthesize the required Lambda invoke permissions automatically.
+
 ## Function event types
 
 For S3, SQS, SNS, and DynamoDB events, reference yamlcdk-managed resources with `ref:<name>`.
@@ -486,6 +528,7 @@ The following CloudFormation resource types are extracted and mapped to the yaml
 | CloudFormation Type | What it maps to |
 | --- | --- |
 | `AWS::Lambda::Function` | Lambda functions (handler, runtime, timeout, memorySize, environment) |
+| `AWS::Lambda::Url` | Lambda Function URLs attached to functions (authType, invokeMode, CORS) |
 | `AWS::S3::Bucket` | S3 buckets (versioning, notification config) |
 | `AWS::DynamoDB::Table` | DynamoDB tables (keys, billing mode, streams) |
 | `AWS::SQS::Queue` | SQS queues (visibility timeout) |
@@ -496,6 +539,8 @@ The following CloudFormation resource types are extracted and mapped to the yaml
 | `AWS::ApiGatewayV2::Api/Route/Integration` | HTTP API routes targeting functions |
 
 Unsupported resource types in the template are silently ignored.
+
+For `AWS::Lambda::Url`, yamlcdk currently supports direct function URLs only: `TargetFunctionArn` must resolve to a Lambda function resource in the same template via `!Ref` or `!GetAtt`, and `Qualifier` is not supported yet.
 
 #### Cross-resource references
 

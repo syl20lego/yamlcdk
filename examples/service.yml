@@ -25,6 +25,13 @@ functions:
       STAGE: dev
     iam:
       - readUsers
+    url:
+      authType: NONE
+      cors:
+        allowedMethods:
+          - GET
+        allowOrigins:
+          - https://example.com
     events:
       http:
         - method: GET

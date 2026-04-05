@@ -40,6 +40,17 @@ Resources:
         Variables:
           STAGE: dev
 
+  HelloFunctionUrl:
+    Type: AWS::Lambda::Url
+    Properties:
+      TargetFunctionArn: !GetAtt HelloFunction.Arn
+      AuthType: NONE
+      Cors:
+        AllowMethods:
+          - GET
+        AllowOrigins:
+          - https://example.com
+
   # ─── Storage ───────────────────────────────────────────────
 
   UploadsBucket:

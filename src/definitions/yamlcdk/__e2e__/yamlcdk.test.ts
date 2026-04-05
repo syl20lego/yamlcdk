@@ -103,6 +103,40 @@ functions:
         }),
       );
     });
+
+    test("creates a lambda function URL from function url config", () => {
+      const { model, template } = buildDefinitionFromYaml(`
+service: function-url
+functions:
+  worker:
+    handler: src/worker.handler
+    build:
+      mode: none
+    url:
+      authType: NONE
+      cors:
+        allowedMethods:
+          - GET
+        allowOrigins:
+          - https://example.com
+`);
+
+      expect(model.functions.worker.url).toEqual({
+        authType: "NONE",
+        invokeMode: "BUFFERED",
+        cors: {
+          allowedMethods: ["GET"],
+          allowOrigins: ["https://example.com"],
+        },
+      });
+      template.hasResourceProperties(
+        "AWS::Lambda::Url",
+        Match.objectLike({
+          AuthType: "NONE",
+        }),
+      );
+      template.hasOutput("workerFunctionUrl", {});
+    });
   });
 
   describe("storage section", () => {

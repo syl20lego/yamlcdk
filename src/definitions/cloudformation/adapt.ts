@@ -13,6 +13,7 @@ import type {
   ServiceModel,
   EventDeclaration,
   FunctionModel,
+  FunctionUrlConfig,
 } from "../../compiler/model.js";
 import { parseServiceModel } from "../../compiler/model.js";
 import { DomainConfigs } from "../../compiler/plugins/index.js";
@@ -123,6 +124,51 @@ function extractIntegrationRef(target: unknown): string | undefined {
     }
   }
   return undefined;
+}
+
+function toStringArray(
+  value: unknown,
+  description: string,
+): string[] | undefined {
+  if (value === undefined) return undefined;
+  if (!Array.isArray(value) || value.some((entry) => typeof entry !== "string")) {
+    throw new Error(`${description} must be an array of strings.`);
+  }
+  return value.length > 0 ? value : undefined;
+}
+
+type FunctionUrlAllowedMethod = NonNullable<
+  NonNullable<FunctionUrlConfig["cors"]>["allowedMethods"]
+>[number];
+
+const functionUrlAllowedMethods = new Set<FunctionUrlAllowedMethod>([
+  "GET",
+  "PUT",
+  "HEAD",
+  "POST",
+  "DELETE",
+  "PATCH",
+  "OPTIONS",
+  "*",
+]);
+
+function toFunctionUrlMethods(
+  value: unknown,
+  description: string,
+): FunctionUrlAllowedMethod[] | undefined {
+  const methods = toStringArray(value, description);
+  if (!methods) return undefined;
+
+  const invalidMethod = methods.find(
+    (method) => !functionUrlAllowedMethods.has(method as FunctionUrlAllowedMethod),
+  );
+  if (invalidMethod) {
+    throw new Error(
+      `${description} includes unsupported method "${invalidMethod}".`,
+    );
+  }
+
+  return methods as FunctionUrlAllowedMethod[];
 }
 
 // ─── Resource extractors ────────────────────────────────────
@@ -515,6 +561,72 @@ function wireHttpApiRoutes(
   }
 }
 
+function wireFunctionUrls(
+  resources: Record<string, CfnResource>,
+  functions: Record<string, FunctionModel>,
+): void {
+  for (const [logicalId, resource] of getResourcesByType(
+    resources,
+    "AWS::Lambda::Url",
+  )) {
+    const p = props(resource);
+    const fnId = resolveLogicalId(p.TargetFunctionArn);
+
+    if (!fnId || !functions[fnId]) {
+      throw new Error(
+        `CloudFormation Lambda URL "${logicalId}" must target a Lambda function resource in the same template via Ref/GetAtt.`,
+      );
+    }
+
+    if (p.Qualifier !== undefined) {
+      throw new Error(
+        `CloudFormation Lambda URL "${logicalId}" uses Qualifier, which yamlcdk does not support yet.`,
+      );
+    }
+
+    if (functions[fnId].url) {
+      throw new Error(
+        `Function "${fnId}" has multiple Lambda URLs, but yamlcdk supports only one direct function URL per function.`,
+      );
+    }
+
+    const cors = p.Cors as Record<string, unknown> | undefined;
+    const urlConfig: FunctionUrlConfig = {
+      authType: (p.AuthType as FunctionUrlConfig["authType"]) ?? "AWS_IAM",
+      invokeMode:
+        (p.InvokeMode as FunctionUrlConfig["invokeMode"]) ?? "BUFFERED",
+      cors: cors
+        ? {
+            allowCredentials:
+              typeof cors.AllowCredentials === "boolean"
+                ? cors.AllowCredentials
+                : undefined,
+            allowHeaders: toStringArray(
+              cors.AllowHeaders,
+              `CloudFormation Lambda URL "${logicalId}" CORS AllowHeaders`,
+            ),
+            allowedMethods: toFunctionUrlMethods(
+              cors.AllowMethods,
+              `CloudFormation Lambda URL "${logicalId}" CORS AllowMethods`,
+            ),
+            allowOrigins: toStringArray(
+              cors.AllowOrigins,
+              `CloudFormation Lambda URL "${logicalId}" CORS AllowOrigins`,
+            ),
+            exposeHeaders: toStringArray(
+              cors.ExposeHeaders,
+              `CloudFormation Lambda URL "${logicalId}" CORS ExposeHeaders`,
+            ),
+            maxAge:
+              typeof cors.MaxAge === "number" ? cors.MaxAge : undefined,
+          }
+        : undefined,
+    };
+
+    functions[fnId].url = urlConfig;
+  }
+}
+
 // ─── Main adaptation ────────────────────────────────────────
 
 function sanitizeName(input: string): string {
@@ -560,6 +672,7 @@ export function adaptCfnTemplate(
   wireS3Notifications(allResources, functions);
   wireEventBridgeRules(allResources, functions);
   wireHttpApiRoutes(allResources, functions);
+  wireFunctionUrls(allResources, functions);
 
   // Build domain configs
   const dc = new DomainConfigs();

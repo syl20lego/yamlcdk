@@ -167,6 +167,35 @@ describe("adaptConfig", () => {
     ]);
   });
 
+  test("applies function URL defaults and carries explicit CORS config", () => {
+    const normalized = normalizeConfig(
+      validateServiceConfig({
+        service: "demo",
+        functions: {
+          fn: {
+            handler: "src/fn.handler",
+            url: {
+              cors: {
+                allowedMethods: ["GET"],
+                allowOrigins: ["https://example.com"],
+              },
+            },
+          },
+        },
+      }),
+    );
+    const model = adaptConfig(normalized);
+
+    expect(model.functions.fn.url).toEqual({
+      authType: "AWS_IAM",
+      invokeMode: "BUFFERED",
+      cors: {
+        allowedMethods: ["GET"],
+        allowOrigins: ["https://example.com"],
+      },
+    });
+  });
+
   test("resolves REST apiKeyRequired from global provider setting", () => {
     const normalized = normalizeConfig(
       validateServiceConfig({

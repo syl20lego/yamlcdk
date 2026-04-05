@@ -2,6 +2,34 @@ import { z } from "zod";
 
 export const runtimeSchema = z.enum(["nodejs20.x", "nodejs22.x", 'nodejs24.x']);
 
+const functionUrlAuthTypeSchema = z.enum(["AWS_IAM", "NONE"]);
+const functionUrlInvokeModeSchema = z.enum(["BUFFERED", "RESPONSE_STREAM"]);
+const functionUrlHttpMethodSchema = z.enum([
+  "GET",
+  "PUT",
+  "HEAD",
+  "POST",
+  "DELETE",
+  "PATCH",
+  "OPTIONS",
+  "*",
+]);
+
+const functionUrlCorsSchema = z.object({
+  allowCredentials: z.boolean().optional(),
+  allowHeaders: z.array(z.string().min(1)).optional(),
+  allowedMethods: z.array(functionUrlHttpMethodSchema).optional(),
+  allowOrigins: z.array(z.string().min(1)).optional(),
+  exposeHeaders: z.array(z.string().min(1)).optional(),
+  maxAge: z.number().int().min(0).optional(),
+});
+
+const functionUrlSchema = z.object({
+  authType: functionUrlAuthTypeSchema.optional(),
+  cors: functionUrlCorsSchema.optional(),
+  invokeMode: functionUrlInvokeModeSchema.optional(),
+});
+
 export const iamStatementSchema = z.object({
   sid: z.string().optional(),
   effect: z.enum(["Allow", "Deny"]).optional(),
@@ -16,6 +44,7 @@ export const functionSchema = z.object({
   memorySize: z.number().int().min(128).max(10240).optional(),
   environment: z.record(z.string(), z.string()).optional(),
   iam: z.array(z.string()).optional(),
+  url: functionUrlSchema.optional(),
   build: z
     .object({
       mode: z.enum(["typescript", "external", "none"]).optional(),

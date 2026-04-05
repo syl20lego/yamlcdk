@@ -104,6 +104,40 @@ describe("config validation", () => {
     expect(normalized.functions.hello.build?.mode).toBe("external");
   });
 
+  test("supports function URL config", () => {
+    const raw = validateServiceConfig({
+      service: "demo",
+      functions: {
+        hello: {
+          handler: "src/handlers/hello.handler",
+          url: {
+            authType: "NONE",
+            invokeMode: "RESPONSE_STREAM",
+            cors: {
+              allowCredentials: true,
+              allowHeaders: ["Content-Type"],
+              allowedMethods: ["GET", "POST"],
+              allowOrigins: ["https://example.com"],
+              exposeHeaders: ["X-Trace-Id"],
+              maxAge: 300,
+            },
+          },
+        },
+      },
+    });
+    const normalized = normalizeConfig(raw);
+
+    expect(normalized.functions.hello.url?.authType).toBe("NONE");
+    expect(normalized.functions.hello.url?.invokeMode).toBe(
+      "RESPONSE_STREAM",
+    );
+    expect(normalized.functions.hello.url?.cors?.allowedMethods).toEqual([
+      "GET",
+      "POST",
+    ]);
+    expect(normalized.functions.hello.url?.cors?.maxAge).toBe(300);
+  });
+
   test("supports REST API event routes and api key settings", () => {
     const raw = validateServiceConfig({
       service: "demo",
