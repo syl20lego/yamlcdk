@@ -15,7 +15,7 @@ import type {
   FunctionModel,
 } from "../../compiler/model.js";
 import { parseServiceModel } from "../../compiler/model.js";
-import { DomainConfigs } from "../../compiler/plugins/domain-configs.js";
+import { DomainConfigs } from "../../compiler/plugins/index.js";
 import {
   S3_CONFIG,
   DYNAMODB_CONFIG,

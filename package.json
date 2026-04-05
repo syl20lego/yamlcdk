@@ -1,6 +1,6 @@
 {
   "name": "yamlcdk",
-  "version": "0.0.2",
+  "version": "0.0.3",
   "description": "yamlcdk (AWS Cloud Development YAML) is a TypeScript CLI that compiles YAML-defined AWS infrastructure to CDK/CloudFormation deployments.",
   "main": "dist/cli.js",
   "scripts": {
@@ -30,8 +30,8 @@
     "yamlcdk": "dist/cli.js"
   },
   "dependencies": {
-    "aws-cdk-lib": "^2.245.0",
     "aws-cdk": "^2.1029.2",
+    "aws-cdk-lib": "^2.245.0",
     "commander": "^14.0.3",
     "constructs": "^10.6.0",
     "js-yaml": "^4.1.1",
@@ -39,7 +39,7 @@
   },
   "devDependencies": {
     "@types/js-yaml": "^4.0.9",
-    "@types/node": "^25.5.0",
+    "@types/node": "^25.5.2",
     "tsx": "^4.21.0",
     "typescript": "^6.0.2",
     "vitest": "^4.1.2"

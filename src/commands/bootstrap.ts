@@ -1,5 +1,5 @@
 import { loadModel } from "../config/loader.js";
-import { assertModelResolution, resolveModelOverrides } from "../runtime/aws.js";
+import { assertModelResolution, resolveModelOverrides} from "../runtime/aws.js";
 import { cdkBootstrap } from "../runtime/cdk.js";
 
 export interface BootstrapOptions {

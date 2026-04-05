@@ -2,13 +2,13 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { describe, expect, test } from "vitest";
-import { normalizeConfig } from "../src/config/normalize.js";
-import { resolveAwsConfig } from "../src/runtime/aws.js";
-import { assertTemplateOnlyStack, cdkBootstrap, deployMode } from "../src/runtime/cdk.js";
+import { normalizeConfig } from "../normalize.js";
+import { resolveAwsConfig } from "../../runtime/aws.js";
+import { assertTemplateOnlyStack, cdkBootstrap, deployMode } from "../../runtime/cdk.js";
 import {
   normalizedServiceConfigSchema,
   validateServiceConfig,
-} from "../src/config/schema.js";
+} from "../schema.js";
 
 describe("config validation", () => {
   test("validates and normalizes defaults", () => {

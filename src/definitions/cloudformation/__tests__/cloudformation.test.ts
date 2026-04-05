@@ -9,16 +9,14 @@ import {
   isCfnRef,
   isCfnGetAtt,
   resolveLogicalId,
-} from "../src/definitions/cloudformation/index.js";
-import { DomainConfigs } from "../src/compiler/plugins/domain-configs.js";
+} from "../index.js";
 import {
   S3_CONFIG,
   DYNAMODB_CONFIG,
   SQS_CONFIG,
   SNS_CONFIG,
-  APIS_CONFIG,
-} from "../src/compiler/plugins/native-domain-configs.js";
-import { definitionRegistry } from "../src/definitions/registry.js";
+} from "../../../compiler/plugins/native-domain-configs.js";
+import { definitionRegistry } from "../../registry.js";
 
 // ─── Helper ─────────────────────────────────────────────────
 

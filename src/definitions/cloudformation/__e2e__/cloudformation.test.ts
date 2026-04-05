@@ -1,0 +1,530 @@
+import { Match } from "aws-cdk-lib/assertions";
+import { describe, expect, test } from "vitest";
+import {
+  buildDefinitionFromYaml,
+  resolveDefinitionFromYaml,
+} from "../../test-utils/e2e.js";
+
+describe("cloudformation definition e2e", () => {
+  describe("metadata section", () => {
+    test("loads yamlcdk metadata into the adapted service model", () => {
+      const { plugin, model, template } = buildDefinitionFromYaml(`
+AWSTemplateFormatVersion: "2010-09-09"
+Metadata:
+  yamlcdk:
+    service: metadata-service
+    stage: prod
+    region: eu-west-1
+    account: "123456789012"
+    profile: platform
+    tags:
+      team: core
+    deployment:
+      qualifier: custom-qualifier
+Resources:
+  HelloFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      Handler: src/hello.handler
+`);
+
+      expect(plugin.formatName).toBe("cloudformation");
+      expect(model.service).toBe("metadata-service");
+      expect(model.provider.stage).toBe("prod");
+      expect(model.provider.region).toBe("eu-west-1");
+      expect(model.provider.account).toBe("123456789012");
+      expect(model.provider.profile).toBe("platform");
+      expect(model.provider.tags?.team).toBe("core");
+      expect(model.provider.deployment?.qualifier).toBe("custom-qualifier");
+      template.resourceCountIs("AWS::Lambda::Function", 1);
+    });
+
+    test("derives service metadata defaults from the file path when metadata is absent", () => {
+      const { plugin, model, template } = buildDefinitionFromYaml(
+        `
+AWSTemplateFormatVersion: "2010-09-09"
+Resources:
+  DerivedFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      Handler: src/derived.handler
+`,
+        "orders-service.yml",
+      );
+
+      expect(plugin.formatName).toBe("cloudformation");
+      expect(model.service).toBe("orders-service");
+      expect(model.provider.stage).toBe("dev");
+      expect(model.provider.region).toBe("us-east-1");
+      expect(model.stackName).toBe("orders-service-dev");
+      template.resourceCountIs("AWS::Lambda::Function", 1);
+    });
+  });
+
+  describe("function resources", () => {
+    test("adapts lambda runtime, timeout, memory, and environment settings", () => {
+      const { model, template } = buildDefinitionFromYaml(`
+AWSTemplateFormatVersion: "2010-09-09"
+Metadata:
+  yamlcdk:
+    service: function-options
+    region: us-east-1
+Resources:
+  WorkerFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      Handler: src/worker.handler
+      Runtime: nodejs22.x
+      Timeout: 45
+      MemorySize: 512
+      Environment:
+        Variables:
+          STAGE: prod
+`);
+
+      expect(model.functions.WorkerFunction.runtime).toBe("nodejs22.x");
+      expect(model.functions.WorkerFunction.timeout).toBe(45);
+      expect(model.functions.WorkerFunction.memorySize).toBe(512);
+      expect(model.functions.WorkerFunction.environment?.STAGE).toBe("prod");
+      template.hasResourceProperties(
+        "AWS::Lambda::Function",
+        Match.objectLike({
+          Runtime: "nodejs22.x",
+          Timeout: 45,
+          MemorySize: 512,
+          Environment: {
+            Variables: {
+              STAGE: "prod",
+            },
+          },
+        }),
+      );
+    });
+  });
+
+  describe("storage resources", () => {
+    test("creates an S3 bucket with versioning when configured", () => {
+      const { template } = buildDefinitionFromYaml(`
+AWSTemplateFormatVersion: "2010-09-09"
+Metadata:
+  yamlcdk:
+    service: versioned-bucket
+Resources:
+  UploadsBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      VersioningConfiguration:
+        Status: Enabled
+`);
+
+      template.hasResourceProperties(
+        "AWS::S3::Bucket",
+        Match.objectLike({
+          VersioningConfiguration: {
+            Status: "Enabled",
+          },
+        }),
+      );
+    });
+
+    test("creates a DynamoDB table with only the required partition key", () => {
+      const { template } = buildDefinitionFromYaml(`
+AWSTemplateFormatVersion: "2010-09-09"
+Metadata:
+  yamlcdk:
+    service: dynamodb-partition
+Resources:
+  OrdersTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      AttributeDefinitions:
+        - AttributeName: pk
+          AttributeType: S
+      KeySchema:
+        - AttributeName: pk
+          KeyType: HASH
+`);
+
+      template.hasResourceProperties(
+        "AWS::DynamoDB::Table",
+        Match.objectLike({
+          KeySchema: Match.arrayWith([
+            Match.objectLike({
+              AttributeName: "pk",
+              KeyType: "HASH",
+            }),
+          ]),
+        }),
+      );
+    });
+
+    test("adds DynamoDB sort key and stream settings when configured", () => {
+      const { template } = buildDefinitionFromYaml(`
+AWSTemplateFormatVersion: "2010-09-09"
+Metadata:
+  yamlcdk:
+    service: dynamodb-optionals
+Resources:
+  OrdersTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      AttributeDefinitions:
+        - AttributeName: pk
+          AttributeType: S
+        - AttributeName: sk
+          AttributeType: N
+      KeySchema:
+        - AttributeName: pk
+          KeyType: HASH
+        - AttributeName: sk
+          KeyType: RANGE
+      StreamSpecification:
+        StreamViewType: NEW_AND_OLD_IMAGES
+`);
+
+      template.hasResourceProperties(
+        "AWS::DynamoDB::Table",
+        Match.objectLike({
+          KeySchema: Match.arrayWith([
+            Match.objectLike({
+              AttributeName: "pk",
+              KeyType: "HASH",
+            }),
+            Match.objectLike({
+              AttributeName: "sk",
+              KeyType: "RANGE",
+            }),
+          ]),
+          StreamSpecification: {
+            StreamViewType: "NEW_AND_OLD_IMAGES",
+          },
+        }),
+      );
+    });
+  });
+
+  describe("messaging resources", () => {
+    test("creates an SQS queue with visibilityTimeout when configured", () => {
+      const { template } = buildDefinitionFromYaml(`
+AWSTemplateFormatVersion: "2010-09-09"
+Metadata:
+  yamlcdk:
+    service: sqs-timeout
+Resources:
+  JobsQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      VisibilityTimeout: 45
+`);
+
+      template.hasResourceProperties(
+        "AWS::SQS::Queue",
+        Match.objectLike({
+          VisibilityTimeout: 45,
+        }),
+      );
+    });
+
+    test("creates an SNS to SQS subscription from CloudFormation resources", () => {
+      const { template } = buildDefinitionFromYaml(`
+AWSTemplateFormatVersion: "2010-09-09"
+Metadata:
+  yamlcdk:
+    service: sns-to-sqs
+Resources:
+  JobsQueue:
+    Type: AWS::SQS::Queue
+  AlertsTopic:
+    Type: AWS::SNS::Topic
+  AlertsToJobs:
+    Type: AWS::SNS::Subscription
+    Properties:
+      Protocol: sqs
+      TopicArn: !Ref AlertsTopic
+      Endpoint: !GetAtt JobsQueue.Arn
+`);
+
+      template.hasResourceProperties(
+        "AWS::SNS::Subscription",
+        Match.objectLike({
+          Protocol: "sqs",
+        }),
+      );
+    });
+  });
+
+  describe("event wiring resources", () => {
+    test("creates an event source mapping for an SQS event source mapping resource", () => {
+      const { model, template } = buildDefinitionFromYaml(`
+AWSTemplateFormatVersion: "2010-09-09"
+Metadata:
+  yamlcdk:
+    service: sqs-event
+Resources:
+  WorkerFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      Handler: src/worker.handler
+  JobsQueue:
+    Type: AWS::SQS::Queue
+  QueueMapping:
+    Type: AWS::Lambda::EventSourceMapping
+    Properties:
+      FunctionName: !Ref WorkerFunction
+      EventSourceArn: !GetAtt JobsQueue.Arn
+      BatchSize: 5
+`);
+
+      expect(model.functions.WorkerFunction.events.map((event) => event.type)).toEqual(
+        ["sqs"],
+      );
+      template.hasResourceProperties(
+        "AWS::Lambda::EventSourceMapping",
+        Match.objectLike({
+          BatchSize: 5,
+        }),
+      );
+    });
+
+    test("creates an event source mapping for a DynamoDB stream resource", () => {
+      const { model, template } = buildDefinitionFromYaml(`
+AWSTemplateFormatVersion: "2010-09-09"
+Metadata:
+  yamlcdk:
+    service: dynamodb-stream-event
+Resources:
+  WorkerFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      Handler: src/worker.handler
+  OrdersTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      AttributeDefinitions:
+        - AttributeName: pk
+          AttributeType: S
+      KeySchema:
+        - AttributeName: pk
+          KeyType: HASH
+      StreamSpecification:
+        StreamViewType: NEW_AND_OLD_IMAGES
+  StreamMapping:
+    Type: AWS::Lambda::EventSourceMapping
+    Properties:
+      FunctionName: !Ref WorkerFunction
+      EventSourceArn: !GetAtt OrdersTable.StreamArn
+      StartingPosition: LATEST
+`);
+
+      expect(model.functions.WorkerFunction.events.map((event) => event.type)).toEqual(
+        ["dynamodb-stream"],
+      );
+      template.hasResourceProperties(
+        "AWS::Lambda::EventSourceMapping",
+        Match.objectLike({
+          StartingPosition: "LATEST",
+        }),
+      );
+    });
+
+    test("creates an SNS lambda subscription for a lambda-targeted subscription", () => {
+      const { model, template } = buildDefinitionFromYaml(`
+AWSTemplateFormatVersion: "2010-09-09"
+Metadata:
+  yamlcdk:
+    service: sns-lambda-event
+Resources:
+  WorkerFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      Handler: src/worker.handler
+  AlertsTopic:
+    Type: AWS::SNS::Topic
+  AlertsToWorker:
+    Type: AWS::SNS::Subscription
+    Properties:
+      Protocol: lambda
+      TopicArn: !Ref AlertsTopic
+      Endpoint: !GetAtt WorkerFunction.Arn
+`);
+
+      expect(model.functions.WorkerFunction.events.map((event) => event.type)).toEqual(
+        ["sns"],
+      );
+      template.hasResourceProperties(
+        "AWS::SNS::Subscription",
+        Match.objectLike({
+          Protocol: "lambda",
+        }),
+      );
+    });
+
+    test("creates an S3 notification custom resource from bucket notifications", () => {
+      const { model, template } = buildDefinitionFromYaml(`
+AWSTemplateFormatVersion: "2010-09-09"
+Metadata:
+  yamlcdk:
+    service: s3-event
+Resources:
+  ProcessorFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      Handler: src/processor.handler
+  UploadsBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      NotificationConfiguration:
+        LambdaConfigurations:
+          - Event: s3:ObjectCreated:*
+            Function: !GetAtt ProcessorFunction.Arn
+`);
+
+      expect(model.functions.ProcessorFunction.events.map((event) => event.type)).toEqual(
+        ["s3"],
+      );
+      template.resourceCountIs("Custom::S3BucketNotifications", 1);
+    });
+
+    test("creates an EventBridge rule for a schedule-based rule", () => {
+      const { model, template } = buildDefinitionFromYaml(`
+AWSTemplateFormatVersion: "2010-09-09"
+Metadata:
+  yamlcdk:
+    service: schedule-event
+Resources:
+  WorkerFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      Handler: src/worker.handler
+  HourlyRule:
+    Type: AWS::Events::Rule
+    Properties:
+      ScheduleExpression: rate(1 hour)
+      Targets:
+        - Arn: !GetAtt WorkerFunction.Arn
+          Id: WorkerTarget
+`);
+
+      expect(model.functions.WorkerFunction.events.map((event) => event.type)).toEqual(
+        ["eventbridge"],
+      );
+      template.hasResourceProperties(
+        "AWS::Events::Rule",
+        Match.objectLike({
+          ScheduleExpression: "rate(1 hour)",
+        }),
+      );
+    });
+
+    test("creates an EventBridge rule for an event-pattern rule", () => {
+      const { model, template } = buildDefinitionFromYaml(`
+AWSTemplateFormatVersion: "2010-09-09"
+Metadata:
+  yamlcdk:
+    service: pattern-event
+Resources:
+  WorkerFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      Handler: src/worker.handler
+  OrdersRule:
+    Type: AWS::Events::Rule
+    Properties:
+      EventPattern:
+        source:
+          - orders
+      Targets:
+        - Arn: !GetAtt WorkerFunction.Arn
+          Id: WorkerTarget
+`);
+
+      expect(model.functions.WorkerFunction.events.map((event) => event.type)).toEqual(
+        ["eventbridge"],
+      );
+      template.hasResourceProperties(
+        "AWS::Events::Rule",
+        Match.objectLike({
+          EventPattern: {
+            source: ["orders"],
+          },
+        }),
+      );
+    });
+
+    test("creates an HTTP API route from ApiGatewayV2 route wiring", () => {
+      const { plugin, model, template } = buildDefinitionFromYaml(`
+AWSTemplateFormatVersion: "2010-09-09"
+Metadata:
+  yamlcdk:
+    service: demo-http
+    stage: prod
+    region: us-east-1
+Resources:
+  HelloFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      Handler: src/hello.handler
+  HttpApi:
+    Type: AWS::ApiGatewayV2::Api
+    Properties:
+      ProtocolType: HTTP
+  HelloIntegration:
+    Type: AWS::ApiGatewayV2::Integration
+    Properties:
+      ApiId: !Ref HttpApi
+      IntegrationType: AWS_PROXY
+      IntegrationUri: !GetAtt HelloFunction.Arn
+      PayloadFormatVersion: "2.0"
+  HelloRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref HttpApi
+      RouteKey: "GET /hello"
+      Target: !Join ["/", ["integrations", !Ref HelloIntegration]]
+`);
+
+      expect(plugin.formatName).toBe("cloudformation");
+      expect(model.stackName).toBe("demo-http-prod");
+      expect(model.functions.HelloFunction.events.map((event) => event.type)).toEqual([
+        "http",
+      ]);
+      template.hasOutput("HttpApiUrl", {});
+      template.resourceCountIs("AWS::ApiGatewayV2::Route", 1);
+    });
+  });
+
+  describe("invalid definitions", () => {
+    test("rejects invalid CloudFormation YAML syntax", () => {
+      const { filePath, plugin } = resolveDefinitionFromYaml(
+        `
+AWSTemplateFormatVersion: "2010-09-09"
+Resources:
+  Broken:
+    Type: AWS::Lambda::Function
+    Properties:
+      Handler: [
+`,
+        "broken-template.yml",
+      );
+
+      expect(plugin.formatName).toBe("cloudformation");
+      expect(() => plugin.load(filePath)).toThrow();
+    });
+
+    test("rejects invalid yamlcdk metadata values during model validation", () => {
+      expect(() =>
+        buildDefinitionFromYaml(`
+AWSTemplateFormatVersion: "2010-09-09"
+Metadata:
+  yamlcdk:
+    service: ""
+Resources:
+  BrokenFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      Handler: src/broken.handler
+`),
+      ).toThrow();
+    });
+  });
+});

@@ -12,7 +12,7 @@
  */
 
 import fs from "node:fs";
-import type { DefinitionPlugin } from "../../compiler/plugins/definition-plugin.js";
+import type { DefinitionPlugin } from "../../compiler/plugins/index.js";
 import type { ServiceModel } from "../../compiler/model.js";
 import { parseCfnYaml } from "./cfn-yaml.js";
 import { adaptCfnTemplate } from "./adapt.js";

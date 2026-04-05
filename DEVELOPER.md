@@ -78,7 +78,10 @@ If you want to exercise deploy/diff/remove flows against AWS, make sure you also
   - `build.ts` - per-function build/package preparation
   - `aws.ts` - CLI override resolution and AWS context checks
   - `cdk.ts` - synth/diff/bootstrap/deploy/destroy runtime wrappers
-- `test/` - Vitest suites (`*.test.ts`)
+- `src/**/__tests__/` - source-adjacent Vitest suites (`*.test.ts`)
+- `src/compiler/domains/__e2e__/` - one CDK-asserted end-to-end suite per compiler domain
+- `src/definitions/**/__e2e__/` - format-level end-to-end suites that load real yamlcdk and CloudFormation input through the definition registry before building the stack
+  - organize these by definition section (`provider`, `functions`, `storage`, `messaging`, `events`, `iam`, `invalid`) and cover valid permutations plus invalid definitions
 - `dist/` - compiled output from `npm run build`; do not edit by hand
 
 ## Typical development workflow
@@ -91,7 +94,7 @@ If you want to exercise deploy/diff/remove flows against AWS, make sure you also
 2. Make the schema/model change first.
 3. Update adaptation/normalization.
 4. Update the compiler/runtime behavior.
-5. Add or adjust tests in `test/*.test.ts`.
+5. Add or adjust tests in the nearest `src/**/__tests__/*.test.ts` suite, update `src/definitions/**/__e2e__/` when input-format loading behavior changes, and update `src/compiler/domains/__e2e__/` when domain stack behavior changes.
 6. Run:
 
    ```bash
@@ -182,8 +185,9 @@ Use them as intended:
      - binding domains after `functions`
 
 6. **Test it**
-   - `test/plugins.test.ts` for registration/order/schema-level behavior
-   - `test/compiler.test.ts` for synthesized stack behavior
+   - `src/compiler/plugins/__tests__/` for registration/order/schema-level behavior
+   - `src/compiler/domains/__e2e__/` for domain-specific CDK stack behavior
+   - `src/compiler/__tests__/stack-builder.test.ts` for cross-domain and deployment behavior
 
 ### Architectural expectations
 
@@ -226,7 +230,7 @@ The cloudformation plugin is registered first (more specific detection), so it t
    - `generateStarter()` if the format should support `init`
 3. Export it from `src/definitions/<format>/index.ts`
 4. Register it in `src/definitions/registry.ts` — pay attention to registration order (more specific plugins first)
-5. Add tests in `test/`
+5. Add definition-level tests in `src/definitions/<format>/__tests__/`
 6. If the format should support `init`, the `--format` flag in `src/commands/init.ts` already dispatches through the registry
 
 ### Definition-plugin expectations
@@ -282,28 +286,50 @@ npm test
 
 What the current suites cover:
 
-- `test/config.test.ts`
+- `src/config/__tests__/config.test.ts`
   - raw config validation
   - normalization defaults
   - AWS override resolution
   - deployment/build config shape
-- `test/plugins.test.ts`
+- `src/compiler/plugins/__tests__/registry.test.ts`
   - domain/definition registries
   - native domain registration order
-  - definition plugin behavior
+- `src/compiler/plugins/__tests__/domain-configs.test.ts`
+  - typed domain config storage
   - Zod-backed domain config validation
-- `test/compiler.test.ts`
-  - synthesized stack behavior
-  - domain interactions
-  - event/resource wiring
-- `test/cloudformation.test.ts`
+- `src/compiler/__tests__/model.test.ts`
+  - canonical model schema validation
+- `src/compiler/__tests__/stack-builder.test.ts`
+  - synthesized cross-domain stack behavior
+  - deployment and synthesizer behavior
+- `src/compiler/domains/__e2e__/functions.test.ts`
+  - function synthesis and IAM wiring
+- `src/compiler/domains/__e2e__/s3.test.ts`
+  - bucket lifecycle settings and S3 event wiring
+- `src/compiler/domains/__e2e__/dynamodb.test.ts`
+  - table options and DynamoDB stream wiring
+- `src/compiler/domains/__e2e__/sqs.test.ts`
+  - queue options and SQS event wiring
+- `src/compiler/domains/__e2e__/sns.test.ts`
+  - topic subscriptions and SNS event wiring
+- `src/compiler/domains/__e2e__/eventbridge.test.ts`
+  - EventBridge schedule and pattern rules
+- `src/compiler/domains/__e2e__/apis.test.ts`
+  - HTTP/REST API synthesis and API options
+- `src/definitions/yamlcdk/__tests__/plugin.test.ts`
+  - yamlcdk definition plugin behavior
+  - normalized config to `ServiceModel` adaptation
+- `src/definitions/yamlcdk/__e2e__/yamlcdk.test.ts`
+  - yamlcdk input format resolution, loading, and stack creation through the definition registry
+- `src/definitions/cloudformation/__tests__/cloudformation.test.ts`
   - CloudFormation YAML parsing with intrinsic functions
   - intrinsic function type guards
   - `canLoad()` detection (CloudFormation vs yamlcdk format)
   - definition registry resolution
   - resource extraction (Lambda, S3, DynamoDB, SQS, SNS)
   - event wiring (EventSourceMapping, SNS subscription, S3 notification, EventBridge, API Gateway V2)
-  - full end-to-end template loading
+- `src/definitions/cloudformation/__e2e__/cloudformation.test.ts`
+  - CloudFormation input format resolution, loading, and stack creation through the definition registry
 
 Update tests when you change:
 

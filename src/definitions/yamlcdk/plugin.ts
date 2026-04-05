@@ -5,10 +5,10 @@
  * {@link ServiceModel} consumed by the compiler pipeline.
  */
 
-import type { DefinitionPlugin } from "../../compiler/plugins/definition-plugin.js";
+import type { DefinitionPlugin } from "../../compiler/plugins/index.js";
 import type { ServiceModel, EventDeclaration, FunctionModel } from "../../compiler/model.js";
 import { parseServiceModel } from "../../compiler/model.js";
-import { DomainConfigs } from "../../compiler/plugins/domain-configs.js";
+import { DomainConfigs } from "../../compiler/plugins/index.js";
 import {
   S3_CONFIG,
   DYNAMODB_CONFIG,
