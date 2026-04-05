@@ -2,6 +2,7 @@ import { describe, expect, test } from "vitest";
 import { definitionRegistry } from "../../registry.js";
 import { writeTmpYaml } from "../../test-utils/e2e.js";
 import { parseCfnYaml } from "../../cloudformation/index.js";
+import { buildApp } from "../../../compiler/stack-builder.js";
 import {
   adaptServerlessConfig,
   resolveServerlessVariables,
@@ -133,6 +134,65 @@ functions:
     ]);
     expect(model.domainConfigs.require(S3_CONFIG).buckets.uploads).toEqual({});
     expect(model.domainConfigs.require(SNS_CONFIG).topics.dispatch).toEqual({});
+  });
+
+  test("maps deploymentRole and deploymentBucket into canonical deployment config", () => {
+    const model = adaptServerlessConfig(
+      parseCfnYaml(`
+service: demo
+provider:
+  name: aws
+  stage: \${opt:stage, 'dev'}
+  region: us-east-1
+  runtime: nodejs20.x
+  iam:
+    deploymentRole: arn:aws:iam::638914547607:role/AldoDefaultCFNRole
+  deploymentBucket:
+    name: aldo-serverless-build-omni-hybris-lab-dev-us-east-1
+functions:
+  hello:
+    handler: src/hello.handler
+`),
+      "serverless.yml",
+    );
+
+    expect(model.provider.deployment).toEqual({
+      cloudFormationExecutionRoleArn:
+        "arn:aws:iam::638914547607:role/AldoDefaultCFNRole",
+      fileAssetsBucketName: "aldo-serverless-build-omni-hybris-lab-dev-us-east-1",
+    });
+  });
+
+  test("uses non-bootstrap synthesizer behavior for mapped Serverless deployment settings", () => {
+    const model = adaptServerlessConfig(
+      parseCfnYaml(`
+service: demo
+provider:
+  name: aws
+  stage: \${opt:stage, 'dev'}
+  region: us-east-1
+  runtime: nodejs20.x
+  iam:
+    deploymentRole: arn:aws:iam::638914547607:role/AldoDefaultCFNRole
+  deploymentBucket:
+    name: aldo-serverless-build-omni-hybris-lab-dev-us-east-1
+functions:
+  hello:
+    handler: src/hello.handler
+`),
+      "serverless.yml",
+    );
+
+    const { app, stack } = buildApp(model);
+    const assembly = app.synth();
+    const stackArtifact = assembly.getStackArtifact(model.stackName);
+    const rules =
+      (stackArtifact.template as { Rules?: Record<string, unknown> }).Rules ?? {};
+
+    expect(stack.synthesizer.constructor.name).toBe(
+      "CliCredentialsStackSynthesizer",
+    );
+    expect(Object.keys(rules)).toHaveLength(0);
   });
 
   test("reuses CloudFormation adaptation for resources.Resources and merges onto top-level functions", () => {

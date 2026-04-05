@@ -499,6 +499,7 @@ Supported top-level surface today:
 
 - `service`
 - `provider.name`, `provider.stage`, `provider.region`, `provider.runtime`, `provider.timeout`, `provider.memorySize`, `provider.stackName`, `provider.profile`, `provider.tags`
+- `provider.iam.deploymentRole`, `provider.deploymentBucket.name`
 - `functions.*.handler`, `runtime`, `timeout`, `memorySize`, `environment`, `role`, `url`
 - function events: `http`, `httpApi`, `schedule`, `s3`, `sns`, `sqs`, `stream` (DynamoDB only), and `eventBridge`
 - raw `resources.Resources` / `resources.Outputs`
@@ -521,6 +522,10 @@ provider:
   stage: ${opt:stage, 'dev'}
   region: us-east-1
   runtime: nodejs20.x
+  iam:
+    deploymentRole: arn:aws:iam::638914547607:role/AldoDefaultCFNRole
+  deploymentBucket:
+    name: aldo-serverless-build-omni-hybris-lab-dev-us-east-1
 
 functions:
   hello:
@@ -549,6 +554,9 @@ Notes:
 - yamlcdk keeps Serverless support scoped to the current compiler model, not the full Serverless Framework surface.
 - `resources.Resources` are adapted through the existing CloudFormation path and merged into the Serverless-derived model.
 - Top-level Serverless config is primary; custom resources may augment generated functions and managed resources, but not override generated function logical IDs.
+- `provider.deploymentBucket.name` maps to yamlcdk `provider.deployment.fileAssetsBucketName`.
+- `provider.iam.deploymentRole` maps to yamlcdk `provider.deployment.cloudFormationExecutionRoleArn`.
+- With that mapped pair, yamlcdk uses explicit deployment infrastructure and does not synthesize the CDK bootstrap version rule for the stack.
 - External SQS/SNS/DynamoDB event targets are not supported yet by the current yamlcdk domain model.
 
 ### CloudFormation format

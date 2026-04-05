@@ -39,6 +39,8 @@ interface ServerlessProviderConfig {
   profile?: unknown;
   tags?: unknown;
   account?: unknown;
+  iam?: unknown;
+  deploymentBucket?: unknown;
 }
 
 interface TopLevelAdaptation {
@@ -343,6 +345,17 @@ function optionalStringRecord(
     result[key] = String(entry);
   }
   return result;
+}
+
+function optionalObject(
+  value: unknown,
+  description: string,
+): Record<string, unknown> | undefined {
+  if (value === undefined) return undefined;
+  if (value === null || typeof value !== "object" || Array.isArray(value)) {
+    throw new Error(`${description} must be an object.`);
+  }
+  return value as Record<string, unknown>;
 }
 
 function ensureLeadingSlash(pathValue: string): string {
@@ -1025,7 +1038,28 @@ function adaptTopLevelServerlessConfig(
     account: optionalString(rawProvider.account, "provider.account"),
     profile: optionalString(rawProvider.profile, "provider.profile"),
     tags: optionalStringRecord(rawProvider.tags, "provider.tags"),
+    deployment: undefined,
   };
+
+  const providerIam = optionalObject(rawProvider.iam, "provider.iam");
+  const deploymentBucket = optionalObject(
+    rawProvider.deploymentBucket,
+    "provider.deploymentBucket",
+  );
+  const cloudFormationExecutionRoleArn = optionalString(
+    providerIam?.deploymentRole,
+    "provider.iam.deploymentRole",
+  );
+  const fileAssetsBucketName = optionalString(
+    deploymentBucket?.name,
+    "provider.deploymentBucket.name",
+  );
+  if (cloudFormationExecutionRoleArn || fileAssetsBucketName) {
+    provider.deployment = {
+      cloudFormationExecutionRoleArn,
+      fileAssetsBucketName,
+    };
+  }
 
   const stackName =
     optionalString(rawProvider.stackName, "provider.stackName") ??

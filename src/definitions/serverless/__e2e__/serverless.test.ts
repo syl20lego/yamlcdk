@@ -1,25 +1,26 @@
 import { Match } from "aws-cdk-lib/assertions";
 import { describe, expect, test } from "vitest";
 import {
-    buildDefinitionFromYaml,
-    firstResourceOfType,
-    type ResourceDefinition, writeTmpYaml,
+  buildDefinitionFromYaml,
+  firstResourceOfType,
+  type ResourceDefinition,
+  writeTmpYaml,
 } from "../../test-utils/e2e.js";
-import {definitionRegistry} from "../../registry.js";
+import { definitionRegistry } from "../../registry.js";
 
 describe("serverless definition e2e", () => {
-    describe("definition registry", () => {
-        test("resolves serverless.yml files to serverless plugin", () => {
-            const serverlessPath = writeTmpYaml(
-                "service: my-service\nprovider:\n  name: aws\nfunctions: {}\n",
-                "serverless.yml",
-            );
-            const plugin = definitionRegistry.resolve(serverlessPath);
-            expect(plugin.formatName).toBe("serverless");
-        });
+  describe("definition registry", () => {
+    test("resolves serverless.yml files to serverless plugin", () => {
+      const serverlessPath = writeTmpYaml(
+        "service: my-service\nprovider:\n  name: aws\nfunctions: {}\n",
+        "serverless.yml",
+      );
+      const plugin = definitionRegistry.resolve(serverlessPath);
+      expect(plugin.formatName).toBe("serverless");
     });
+  });
 
-    test("synthesizes supported top-level Serverless functions, URLs, and API events", () => {
+  test("synthesizes supported top-level Serverless functions, URLs, and API events", () => {
     const { plugin, model, template } = buildDefinitionFromYaml(
       `
 service: demo
@@ -99,5 +100,41 @@ resources:
       "AWS::Lambda::Url",
     );
     expect(functionUrl?.Properties?.AuthType).toBe("NONE");
+  });
+
+  test("maps Serverless deployment settings so bootstrap rules are not synthesized", () => {
+    const { model, stack } = buildDefinitionFromYaml(
+      `
+service: demo
+provider:
+  name: aws
+  stage: \${opt:stage, 'dev'}
+  region: us-east-1
+  runtime: nodejs20.x
+  iam:
+    deploymentRole: arn:aws:iam::638914547607:role/AldoDefaultCFNRole
+  deploymentBucket:
+    name: aldo-serverless-build-omni-hybris-lab-dev-us-east-1
+functions:
+  hello:
+    handler: src/hello.handler
+`,
+      "serverless.yml",
+    );
+
+    const assembly = stack.node.root.synth();
+    const stackArtifact = assembly.getStackArtifact(model.stackName);
+    const rules =
+      (stackArtifact.template as { Rules?: Record<string, unknown> }).Rules ?? {};
+
+    expect(model.provider.deployment).toEqual({
+      cloudFormationExecutionRoleArn:
+        "arn:aws:iam::638914547607:role/AldoDefaultCFNRole",
+      fileAssetsBucketName: "aldo-serverless-build-omni-hybris-lab-dev-us-east-1",
+    });
+    expect(stack.synthesizer.constructor.name).toBe(
+      "CliCredentialsStackSynthesizer",
+    );
+    expect(Object.keys(rules)).toHaveLength(0);
   });
 });
