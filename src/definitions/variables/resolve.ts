@@ -368,6 +368,10 @@ export function resolveDefinitionVariables(
       const rawValue = getPathValue(root, dottedPath);
       let resolvedValue = resolveNode(rawValue, dottedPath);
 
+      if (resolvedValue === undefined && rootResolvePath) {
+        resolvedValue = rootResolvePath(dottedPath);
+      }
+
       if (resolvedValue === undefined && dottedPath.includes(".")) {
         const segments = dottedPath.split(".").filter(Boolean);
         for (let splitIndex = segments.length - 1; splitIndex > 0; splitIndex -= 1) {
@@ -380,10 +384,6 @@ export function resolveDefinitionVariables(
           resolvedValue = resolveNode(suffixValue, dottedPath);
           break;
         }
-      }
-
-      if (resolvedValue === undefined && rootResolvePath) {
-        resolvedValue = rootResolvePath(dottedPath);
       }
 
       inProgressPaths.delete(dottedPath);

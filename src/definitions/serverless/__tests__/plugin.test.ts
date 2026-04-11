@@ -412,6 +412,56 @@ custom:
       delete process.env.YAMLCDK_TEST_APP;
     }
   });
+
+  test("resolves cross-file references without false circular detection", () => {
+    process.env.YAMLCDK_XFILE_STAGE = "dev";
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "yamlcdk-xfile-"));
+    try {
+      fs.writeFileSync(
+        path.join(tmpDir, "global.yml"),
+        [
+          "custom:",
+          "  global:",
+          "    STAGE: ${opt:stage, self:provider.stage}",
+          "    ENV: ${file(./${self:custom.global.STAGE}.env.yml):${self:custom.global.STAGE}.ENV}",
+          "    REGION: ${file(./${self:custom.global.ENV}.env.yml):${self:custom.global.ENV}.REGION}",
+        ].join("\n"),
+        "utf8",
+      );
+
+      fs.writeFileSync(
+        path.join(tmpDir, "dev.env.yml"),
+        ["dev:", "  ENV: dev", "  REGION: us-east-1"].join("\n"),
+        "utf8",
+      );
+
+      const serverlessPath = path.join(tmpDir, "serverless.yml");
+      fs.writeFileSync(
+        serverlessPath,
+        [
+          "service: demo",
+          "custom:",
+          "  global: ${file(./global.yml):custom.global}",
+          "provider:",
+          "  name: aws",
+          "  stage: ${env:YAMLCDK_XFILE_STAGE}",
+          "  region: ${self:custom.global.REGION}",
+          "functions:",
+          "  hello:",
+          "    handler: src/hello.handler",
+        ].join("\n"),
+        "utf8",
+      );
+
+      const parsed = parseCfnYaml(fs.readFileSync(serverlessPath, "utf8"));
+      const model = adaptServerlessConfig(parsed, serverlessPath);
+      expect(model.provider.region).toBe("us-east-1");
+      expect(model.provider.stage).toBe("dev");
+    } finally {
+      delete process.env.YAMLCDK_XFILE_STAGE;
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+    }
+  });
 });
 
 describe("adaptServerlessConfig", () => {
