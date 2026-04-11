@@ -290,8 +290,11 @@ The first stage happens before `ServiceStack` exists; the remaining stages are e
 
 The load stage has multiple sub-steps. For the **yamlcdk format**:
 
-1. `loadRawConfig()` reads YAML and immediately calls `validateServiceConfig()` from `src/config/schema.ts`.
-2. `normalizeConfig()` fills defaults such as:
+1. `loadRawConfig()` reads YAML and immediately calls `resolveDefinitionVariables()` from `src/definitions/variables/resolve.ts`, which:
+   - loads `.env` and `.env.{stage}` files from the YAML file's directory into `process.env` (OS environment takes precedence)
+   - resolves `${self:...}`, `${opt:...}`, `${sls:...}`, `${aws:...}`, `${env:...}`, and `${file(...):...}` expressions
+2. `validateServiceConfig()` from `src/config/schema.ts` validates the resolved config.
+3. `normalizeConfig()` fills defaults such as:
    - `provider.stage` defaulting to `"dev"`
    - `provider.region` defaulting from config, `AWS_REGION`, or `"us-east-1"`
    - `stackName` defaulting to a sanitized `<service>-<stage>` form

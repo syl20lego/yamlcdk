@@ -161,6 +161,7 @@ export const cloudformationDefinitionPlugin: DefinitionPlugin = {
       entryFilePath: filePath,
       parseContent: (yamlContent) => parseCfnYaml(yamlContent),
       opt: options.opt,
+      stage: options.opt?.stage as string | undefined,
     });
     return adaptCfnTemplate(resolved, filePath);
   },

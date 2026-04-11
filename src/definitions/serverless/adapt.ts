@@ -68,7 +68,7 @@ const SERVERLESS_URL_CORS_ALLOW_ALL_HEADERS = [
   "X-Amz-Security-Token",
 ];
 
-const SUPPORTED_SERVERLESS_SOURCES = new Set(["self", "opt", "sls", "aws"]);
+const SUPPORTED_SERVERLESS_SOURCES = new Set(["self", "opt", "sls", "aws", "env"]);
 
 type VariableOutcome =
   | { type: "value"; value: unknown }
@@ -147,6 +147,7 @@ function getPathValue(root: unknown, dottedPath: string): unknown {
 interface ResolveServerlessVariablesOptions {
   filePath?: string;
   opt?: Record<string, unknown>;
+  stage?: string;
 }
 
 export function resolveServerlessVariables(
@@ -157,6 +158,7 @@ export function resolveServerlessVariables(
     entryFilePath: options.filePath,
     parseContent: (content) => parseCfnYaml(content),
     opt: options.opt,
+    stage: options.stage ?? (options.opt?.stage as string | undefined),
   });
 }
 

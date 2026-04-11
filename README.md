@@ -512,7 +512,44 @@ Supported Serverless variable sources today:
 - `${aws:region}`
 - `${aws:accountId}` when the account is available via config or environment
 - `${opt:...}` from CLI options, with optional fallback, for example `${opt:memory, 1024}` with `yamlcdk deploy --memory 2048`
+- `${env:VAR_NAME}` reads the OS environment variable `VAR_NAME`, with optional fallback, for example `${env:DB_HOST, 'localhost'}`
 - `${file(path):selector}` with optional fallback, for example `${file(./global.yml):custom.region, 'us-east-1'}`
+
+### `.env` file support
+
+yamlcdk automatically loads `.env` files from the same directory as the YAML definition file:
+
+- `.env` — base environment variables, always loaded when present
+- `.env.{stage}` — stage-specific overrides (e.g., `.env.prod`, `.env.dev`), loaded when the stage is known
+
+Loading rules:
+
+- `.env` files are **optional** — missing files are silently ignored.
+- **OS environment takes precedence**: values already set in the OS environment are never overridden by `.env` files.
+- **Stage-specific files take precedence over `.env`**: `.env.prod` values override `.env` values (but not OS environment).
+- The stage is determined from the `--stage` CLI option (via `${opt:stage}`).
+- No variable interpolation is performed inside `.env` files — they use plain `KEY=VALUE` syntax.
+
+Example `.env`:
+
+```
+# Database config
+DB_HOST=localhost
+DB_PORT=5432
+API_KEY="my-secret-key"
+```
+
+Example YAML using `${env:...}`:
+
+```yaml
+functions:
+  api:
+    handler: src/handlers/api.handler
+    environment:
+      DB_HOST: ${env:DB_HOST, 'localhost'}
+      DB_PORT: ${env:DB_PORT, '5432'}
+      API_KEY: ${env:API_KEY}
+```
 
 `file(path)` resolution rules:
 
@@ -520,6 +557,7 @@ Supported Serverless variable sources today:
 - `selector` uses dotted path lookup in the referenced YAML document.
 - Nested variables are supported in both `path` and `selector`.
 - Missing values fail validation unless a fallback alternative resolves.
+- Variables inside imported files (e.g. `${self:provider.stage}`) resolve against the imported file first, then fall back to the entry/root document context. This allows imported files to reference values defined in the main configuration file.
 - The same `${file(path):selector}` behavior is also available for yamlcdk and CloudFormation input files.
 
 Example:

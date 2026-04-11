@@ -6,6 +6,7 @@ import { resolveDefinitionVariables } from "../definitions/variables/resolve.js"
 
 interface LoadRawConfigOptions {
   opt?: Record<string, unknown>;
+  stage?: string;
 }
 
 export function loadRawConfig(
@@ -18,6 +19,7 @@ export function loadRawConfig(
     entryFilePath: filePath,
     parseContent: (content) => yaml.load(content),
     opt: options.opt,
+    stage: options.stage ?? (options.opt?.stage as string | undefined),
   });
   return validateServiceConfig(resolved);
 }

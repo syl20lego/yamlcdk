@@ -201,6 +201,217 @@ functions:
     });
     expect(model.functions.hello.memorySize).toBe(2048);
   });
+
+  test("self: in imported file falls back to parent serverless.yml context", () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "yamlcdk-serverless-parent-ctx-"));
+    const serverlessPath = path.join(dir, "serverless.yml");
+
+    fs.writeFileSync(
+      serverlessPath,
+      `
+service: demo
+provider:
+  name: aws
+  stage: dev
+custom:
+  global: \${file(./global.yml):custom.global}
+functions:
+  hello:
+    handler: src/hello.handler
+    environment:
+      STAGE: \${self:custom.global.STAGE}
+`,
+      "utf8",
+    );
+
+    fs.writeFileSync(
+      path.join(dir, "global.yml"),
+      `
+custom:
+  global:
+    STAGE: \${opt:stage, self:provider.stage}
+`,
+      "utf8",
+    );
+
+    const model = serverlessDefinitionPlugin.load(serverlessPath);
+    expect(model.functions.hello.environment?.STAGE).toBe("dev");
+  });
+
+  test("opt: takes precedence over self: parent fallback in imported file", () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "yamlcdk-serverless-opt-parent-"));
+    const serverlessPath = path.join(dir, "serverless.yml");
+
+    fs.writeFileSync(
+      serverlessPath,
+      `
+service: demo
+provider:
+  name: aws
+  stage: dev
+custom:
+  global: \${file(./global.yml):custom.global}
+functions:
+  hello:
+    handler: src/hello.handler
+    environment:
+      STAGE: \${self:custom.global.STAGE}
+`,
+      "utf8",
+    );
+
+    fs.writeFileSync(
+      path.join(dir, "global.yml"),
+      `
+custom:
+  global:
+    STAGE: \${opt:stage, self:provider.stage}
+`,
+      "utf8",
+    );
+
+    const model = serverlessDefinitionPlugin.load(serverlessPath, {
+      opt: { stage: "staging" },
+    });
+    expect(model.functions.hello.environment?.STAGE).toBe("staging");
+  });
+
+  test("imported file local keys take precedence over parent context", () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "yamlcdk-serverless-local-prio-"));
+    const serverlessPath = path.join(dir, "serverless.yml");
+
+    fs.writeFileSync(
+      serverlessPath,
+      `
+service: demo
+provider:
+  name: aws
+  stage: dev
+custom:
+  global: \${file(./global.yml):custom.global}
+functions:
+  hello:
+    handler: src/hello.handler
+    environment:
+      STAGE: \${self:custom.global.STAGE}
+`,
+      "utf8",
+    );
+
+    fs.writeFileSync(
+      path.join(dir, "global.yml"),
+      `
+provider:
+  stage: from-global
+custom:
+  global:
+    STAGE: \${self:provider.stage}
+`,
+      "utf8",
+    );
+
+    const model = serverlessDefinitionPlugin.load(serverlessPath);
+    expect(model.functions.hello.environment?.STAGE).toBe("from-global");
+  });
+});
+
+describe("env variable source", () => {
+  const originalEnv = { ...process.env };
+
+  function resetEnv() {
+    for (const key of Object.keys(process.env)) {
+      if (!(key in originalEnv)) {
+        delete process.env[key];
+      } else {
+        process.env[key] = originalEnv[key];
+      }
+    }
+  }
+
+  test("resolves ${env:VAR_NAME} from process.env", () => {
+    process.env.YAMLCDK_TEST_REGION = "eu-west-1";
+    try {
+      const resolved = resolveServerlessVariables(
+        parseCfnYaml(`
+service: demo
+provider:
+  name: aws
+  region: \${env:YAMLCDK_TEST_REGION}
+`),
+      ) as Record<string, unknown>;
+
+      expect((resolved.provider as Record<string, unknown>).region).toBe("eu-west-1");
+    } finally {
+      delete process.env.YAMLCDK_TEST_REGION;
+    }
+  });
+
+  test("uses fallback when env var is missing", () => {
+    delete process.env.YAMLCDK_MISSING_VAR;
+    const resolved = resolveServerlessVariables(
+      parseCfnYaml(`
+service: demo
+provider:
+  name: aws
+  region: \${env:YAMLCDK_MISSING_VAR, 'us-west-2'}
+`),
+    ) as Record<string, unknown>;
+
+    expect((resolved.provider as Record<string, unknown>).region).toBe("us-west-2");
+  });
+
+  test("throws when env var is missing without fallback", () => {
+    delete process.env.YAMLCDK_MISSING_VAR;
+    expect(() =>
+      resolveServerlessVariables(
+        parseCfnYaml(`
+service: demo
+provider:
+  name: aws
+  region: \${env:YAMLCDK_MISSING_VAR}
+`),
+      ),
+    ).toThrow(/Unable to resolve variable/);
+  });
+
+  test("resolves empty string env var", () => {
+    process.env.YAMLCDK_EMPTY = "";
+    try {
+      const resolved = resolveServerlessVariables(
+        parseCfnYaml(`
+service: demo
+provider:
+  name: aws
+custom:
+  val: \${env:YAMLCDK_EMPTY}
+`),
+      ) as Record<string, unknown>;
+
+      expect((resolved.custom as Record<string, unknown>).val).toBe("");
+    } finally {
+      delete process.env.YAMLCDK_EMPTY;
+    }
+  });
+
+  test("works in template strings with other sources", () => {
+    process.env.YAMLCDK_TEST_APP = "myapp";
+    try {
+      const resolved = resolveServerlessVariables(
+        parseCfnYaml(`
+service: demo
+provider:
+  name: aws
+  stage: prod
+custom:
+  label: \${env:YAMLCDK_TEST_APP}-\${sls:stage}
+`),
+      ) as Record<string, unknown>;
+
+      expect((resolved.custom as Record<string, unknown>).label).toBe("myapp-prod");
+    } finally {
+      delete process.env.YAMLCDK_TEST_APP;
+    }
+  });
 });
 
 describe("adaptServerlessConfig", () => {

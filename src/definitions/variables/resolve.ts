@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 
-const SUPPORTED_VARIABLE_SOURCES = new Set(["self", "opt", "sls", "aws", "file"]);
+const SUPPORTED_VARIABLE_SOURCES = new Set(["self", "opt", "sls", "aws", "file", "env"]);
 
 type VariableOutcome =
   | { type: "value"; value: unknown }
@@ -30,6 +30,7 @@ export interface ResolveDefinitionVariablesOptions {
   entryFilePath?: string;
   parseContent: (content: string, filePath: string) => unknown;
   opt?: Record<string, unknown>;
+  stage?: string;
 }
 
 function splitTemplateParts(value: string): TemplatePart[] {
@@ -283,6 +284,58 @@ function toScalarString(value: unknown, description: string): string {
   return String(value ?? "");
 }
 
+export function parseDotEnvFile(content: string): Record<string, string> {
+  const result: Record<string, string> = {};
+  for (const rawLine of content.split(/\r?\n/)) {
+    const line = rawLine.trim();
+    if (!line || line.startsWith("#")) continue;
+
+    const eqIndex = line.indexOf("=");
+    if (eqIndex === -1) continue;
+
+    const key = line.slice(0, eqIndex).trim();
+    if (!key) continue;
+
+    let value = line.slice(eqIndex + 1).trim();
+    if (
+      (value.startsWith('"') && value.endsWith('"')) ||
+      (value.startsWith("'") && value.endsWith("'"))
+    ) {
+      value = value.slice(1, -1);
+    }
+    result[key] = value;
+  }
+  return result;
+}
+
+function loadDotEnvFiles(
+  entryFilePath: string,
+  stage: string | undefined,
+): void {
+  const dir = path.dirname(entryFilePath);
+  // Load in priority order (highest first) so earlier values stick
+  const files: string[] = [];
+  if (stage) {
+    files.push(path.join(dir, `.env.${stage}`));
+  }
+  files.push(path.join(dir, ".env"));
+
+  for (const filePath of files) {
+    let content: string;
+    try {
+      content = fs.readFileSync(filePath, "utf8");
+    } catch {
+      continue;
+    }
+    const vars = parseDotEnvFile(content);
+    for (const [key, value] of Object.entries(vars)) {
+      if (process.env[key] === undefined) {
+        process.env[key] = value;
+      }
+    }
+  }
+}
+
 export function resolveDefinitionVariables(
   input: unknown,
   options: ResolveDefinitionVariablesOptions,
@@ -293,7 +346,13 @@ export function resolveDefinitionVariables(
     options.entryFilePath ?? path.join(process.cwd(), "definition.yml"),
   );
 
-  const resolveDocument = (root: unknown, currentFilePath: string): unknown => {
+  loadDotEnvFiles(entryFilePath, options.stage);
+
+  const resolveDocument = (
+    root: unknown,
+    currentFilePath: string,
+    rootResolvePath?: (dottedPath: string) => unknown,
+  ): unknown => {
     const pathCache = new Map<string, unknown>();
     const inProgressPaths = new Set<string>();
 
@@ -323,6 +382,10 @@ export function resolveDefinitionVariables(
         }
       }
 
+      if (resolvedValue === undefined && rootResolvePath) {
+        resolvedValue = rootResolvePath(dottedPath);
+      }
+
       inProgressPaths.delete(dottedPath);
       pathCache.set(dottedPath, resolvedValue);
       return resolvedValue;
@@ -343,7 +406,11 @@ export function resolveDefinitionVariables(
       try {
         const content = fs.readFileSync(normalizedPath, "utf8");
         const parsed = options.parseContent(content, normalizedPath);
-        const resolved = resolveDocument(parsed, normalizedPath);
+        const resolved = resolveDocument(
+          parsed,
+          normalizedPath,
+          rootResolvePath ?? resolvePath,
+        );
         resolvedFileCache.set(normalizedPath, resolved);
         return resolved;
       } catch (error) {
@@ -465,6 +532,13 @@ export function resolveDefinitionVariables(
             : { type: "missing" };
         }
         return { type: "skip" };
+      }
+
+      if (source === "env") {
+        const envValue = process.env[address];
+        return envValue !== undefined
+          ? { type: "value", value: envValue }
+          : { type: "missing" };
       }
 
       if (source === "file") {
