@@ -158,6 +158,60 @@ describe("cloudformation definition plugin", () => {
     expect(content).toContain("yamlcdk:");
     expect(content).toContain("service:");
   });
+
+  test("load resolves ${file(...):...} values in Metadata.yamlcdk", () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "yamlcdk-cfn-vars-"));
+    const templatePath = path.join(dir, "template.yml");
+
+    fs.writeFileSync(
+      templatePath,
+      `
+AWSTemplateFormatVersion: "2010-09-09"
+Metadata:
+  yamlcdk:
+    service: cfn-demo
+    stage: dev
+    region: \${file(./global.yml):config.region}
+Resources: {}
+`,
+      "utf8",
+    );
+
+    fs.writeFileSync(
+      path.join(dir, "global.yml"),
+      `
+config:
+  region: ca-central-1
+`,
+      "utf8",
+    );
+
+    const model = cloudformationDefinitionPlugin.load(templatePath);
+    expect(model.provider.region).toBe("ca-central-1");
+  });
+
+  test("load throws when required ${file(...):...} values are missing", () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "yamlcdk-cfn-vars-missing-"));
+    const templatePath = path.join(dir, "template.yml");
+
+    fs.writeFileSync(
+      templatePath,
+      `
+AWSTemplateFormatVersion: "2010-09-09"
+Metadata:
+  yamlcdk:
+    service: cfn-demo
+    stage: dev
+    region: \${file(./missing.yml):config.region}
+Resources: {}
+`,
+      "utf8",
+    );
+
+    expect(() => cloudformationDefinitionPlugin.load(templatePath)).toThrow(
+      /Unable to resolve variable/,
+    );
+  });
 });
 
 // ─── Definition registry resolution ────────────────────────

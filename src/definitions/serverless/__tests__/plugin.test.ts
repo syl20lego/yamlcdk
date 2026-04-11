@@ -1,4 +1,7 @@
 import { describe, expect, test } from "vitest";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import { definitionRegistry } from "../../registry.js";
 import { writeTmpYaml } from "../../test-utils/e2e.js";
 import { parseCfnYaml } from "../../cloudformation/index.js";
@@ -68,6 +71,85 @@ resources:
     expect((resolved.provider as Record<string, unknown>).stage).toBe("prod");
     expect(custom.label).toBe("demo-prod-us-east-1");
     expect(outputs.Value).toEqual({ "Fn::Sub": "arn:${AWS::Region}:demo" });
+  });
+
+  test("resolves nested ${file(...):...} variables across sibling YAML files", () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "yamlcdk-serverless-vars-"));
+    const serverlessPath = path.join(dir, "serverless.yml");
+
+    fs.writeFileSync(
+      serverlessPath,
+      `
+service: demo
+provider:
+  name: aws
+  region: \${self:custom.global.REGION}
+custom:
+  global: \${file(./global.yml):custom.global}
+functions:
+  hello:
+    handler: src/hello.handler
+`,
+      "utf8",
+    );
+
+    fs.writeFileSync(
+      path.join(dir, "global.yml"),
+      `
+custom:
+  global:
+    ENVIRONMENT: dev
+    REGION: \${file(./\${self:custom.global.ENVIRONMENT}.env.yml):\${self:custom.global.ENVIRONMENT}.REGION}
+`,
+      "utf8",
+    );
+
+    fs.writeFileSync(
+      path.join(dir, "dev.env.yml"),
+      `
+dev:
+  REGION: ca-central-1
+`,
+      "utf8",
+    );
+
+    const model = serverlessDefinitionPlugin.load(serverlessPath);
+    expect(model.provider.region).toBe("ca-central-1");
+  });
+
+  test("supports fallback alternatives when a file variable cannot be resolved", () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "yamlcdk-serverless-fallback-"));
+    const serverlessPath = path.join(dir, "serverless.yml");
+
+    fs.writeFileSync(
+      serverlessPath,
+      `
+service: demo
+provider:
+  name: aws
+  region: \${self:custom.global.REGION}
+custom:
+  global: \${file(./global.yml):custom.global}
+functions:
+  hello:
+    handler: src/hello.handler
+`,
+      "utf8",
+    );
+
+    fs.writeFileSync(
+      path.join(dir, "global.yml"),
+      `
+custom:
+  global:
+    ENVIRONMENT: qa
+    REGION: \${file(./\${self:custom.global.ENVIRONMENT}.env.yml):\${self:custom.global.ENVIRONMENT}.REGION, 'us-east-1'}
+`,
+      "utf8",
+    );
+
+    const model = serverlessDefinitionPlugin.load(serverlessPath);
+    expect(model.provider.region).toBe("us-east-1");
   });
 });
 

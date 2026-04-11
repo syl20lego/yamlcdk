@@ -1,4 +1,7 @@
 import { describe, expect, test } from "vitest";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import { DomainConfigs } from "../../../compiler/plugins/index.js";
 import {
   APIS_CONFIG,
@@ -30,6 +33,62 @@ describe("yamlcdk definition plugin", () => {
 
   test("formatName is yamlcdk", () => {
     expect(yamlcdkDefinitionPlugin.formatName).toBe("yamlcdk");
+  });
+
+  test("load resolves ${file(...):...} values before schema validation", () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "yamlcdk-file-vars-"));
+    const configPath = path.join(dir, "yamlcdk.yml");
+
+    fs.writeFileSync(
+      configPath,
+      `
+service: demo
+provider:
+  region: \${file(./global.yml):config.region}
+functions:
+  hello:
+    handler: src/hello.handler
+    build:
+      mode: none
+`,
+      "utf8",
+    );
+
+    fs.writeFileSync(
+      path.join(dir, "global.yml"),
+      `
+config:
+  region: ca-central-1
+`,
+      "utf8",
+    );
+
+    const model = yamlcdkDefinitionPlugin.load(configPath);
+    expect(model.provider.region).toBe("ca-central-1");
+  });
+
+  test("load throws when required ${file(...):...} values are missing", () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "yamlcdk-file-vars-missing-"));
+    const configPath = path.join(dir, "yamlcdk.yml");
+
+    fs.writeFileSync(
+      configPath,
+      `
+service: demo
+provider:
+  region: \${file(./missing.yml):config.region}
+functions:
+  hello:
+    handler: src/hello.handler
+    build:
+      mode: none
+`,
+      "utf8",
+    );
+
+    expect(() => yamlcdkDefinitionPlugin.load(configPath)).toThrow(
+      /Unable to resolve variable/,
+    );
   });
 });
 

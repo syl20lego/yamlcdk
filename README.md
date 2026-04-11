@@ -512,6 +512,15 @@ Supported Serverless variable sources today:
 - `${aws:region}`
 - `${aws:accountId}` when the account is available via config or environment
 - `${opt:...}` only when used with a fallback, for example `${opt:stage, 'dev'}`
+- `${file(path):selector}` with optional fallback, for example `${file(./global.yml):custom.region, 'us-east-1'}`
+
+`file(path)` resolution rules:
+
+- `path` is resolved relative to the YAML file containing the expression.
+- `selector` uses dotted path lookup in the referenced YAML document.
+- Nested variables are supported in both `path` and `selector`.
+- Missing values fail validation unless a fallback alternative resolves.
+- The same `${file(path):selector}` behavior is also available for yamlcdk and CloudFormation input files.
 
 Example:
 

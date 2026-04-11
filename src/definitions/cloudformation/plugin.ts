@@ -16,6 +16,7 @@ import type { DefinitionPlugin } from "../../compiler/plugins/index.js";
 import type { ServiceModel } from "../../compiler/model.js";
 import { parseCfnYaml } from "./cfn-yaml.js";
 import { adaptCfnTemplate } from "./adapt.js";
+import { resolveDefinitionVariables } from "../variables/resolve.js";
 
 const STARTER_TEMPLATE = `AWSTemplateFormatVersion: "2010-09-09"
 Description: My service deployed with yamlcdk
@@ -155,7 +156,11 @@ export const cloudformationDefinitionPlugin: DefinitionPlugin = {
         `Failed to parse CloudFormation template: ${filePath}`,
       );
     }
-    return adaptCfnTemplate(parsed, filePath);
+    const resolved = resolveDefinitionVariables(parsed, {
+      entryFilePath: filePath,
+      parseContent: (yamlContent) => parseCfnYaml(yamlContent),
+    });
+    return adaptCfnTemplate(resolved, filePath);
   },
 
   generateStarter(): string {

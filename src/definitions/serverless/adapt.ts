@@ -21,7 +21,8 @@ import {
   type SQSQueueConfig,
 } from "../../compiler/plugins/native-domain-configs.js";
 import { adaptCfnTemplate } from "../cloudformation/adapt.js";
-import { resolveLogicalId } from "../cloudformation/cfn-yaml.js";
+import { parseCfnYaml, resolveLogicalId } from "../cloudformation/cfn-yaml.js";
+import { resolveDefinitionVariables } from "../variables/resolve.js";
 
 interface CfnResource {
   Type: string;
@@ -143,165 +144,18 @@ function getPathValue(root: unknown, dottedPath: string): unknown {
   return current;
 }
 
-export function resolveServerlessVariables(input: unknown): unknown {
-  const cache = new Map<string, unknown>();
-  const inProgress = new Set<string>();
+interface ResolveServerlessVariablesOptions {
+  filePath?: string;
+}
 
-  const resolvePath = (dottedPath: string): unknown => {
-    if (cache.has(dottedPath)) return cache.get(dottedPath);
-    if (inProgress.has(dottedPath)) {
-      throw new Error(
-        `Circular Serverless variable reference detected at "${dottedPath}".`,
-      );
-    }
-
-    inProgress.add(dottedPath);
-    const rawValue = getPathValue(input, dottedPath);
-    const resolvedValue = resolveNode(rawValue, dottedPath);
-    inProgress.delete(dottedPath);
-    cache.set(dottedPath, resolvedValue);
-    return resolvedValue;
-  };
-
-  const resolveSpecialVariable = (
-    source: string,
-    address: string,
-  ): VariableOutcome => {
-    if (!SUPPORTED_SERVERLESS_SOURCES.has(source)) {
-      return { type: "skip" };
-    }
-
-    if (source === "self") {
-      return { type: "value", value: resolvePath(address) };
-    }
-
-    if (source === "opt") {
-      return { type: "missing" };
-    }
-
-    if (source === "sls") {
-      if (address === "stage") {
-        return {
-          type: "value",
-          value: resolvePath("provider.stage") ?? "dev",
-        };
-      }
-      if (address === "service") {
-        const service = resolvePath("service");
-        if (typeof service === "string") return { type: "value", value: service };
-        if (
-          service &&
-          typeof service === "object" &&
-          typeof (service as Record<string, unknown>).name === "string"
-        ) {
-          return {
-            type: "value",
-            value: (service as Record<string, unknown>).name,
-          };
-        }
-        return { type: "missing" };
-      }
-      return { type: "skip" };
-    }
-
-    if (source === "aws") {
-      if (address === "region") {
-        return {
-          type: "value",
-          value:
-            resolvePath("provider.region") ??
-            process.env.AWS_REGION ??
-            "us-east-1",
-        };
-      }
-      if (address === "accountId") {
-        const accountId =
-          resolvePath("provider.account") ??
-          process.env.AWS_ACCOUNT_ID ??
-          process.env.CDK_DEFAULT_ACCOUNT;
-        return accountId !== undefined
-          ? { type: "value", value: accountId }
-          : { type: "missing" };
-      }
-      return { type: "skip" };
-    }
-
-    return { type: "skip" };
-  };
-
-  const resolveVariableExpression = (expression: string): VariableOutcome => {
-    let sawSupportedSource = false;
-
-    for (const alternative of splitVariableAlternatives(expression)) {
-      const literal = parseLiteralVariableToken(alternative);
-      if (literal !== undefined) return { type: "value", value: literal };
-
-      const match = /^(?<source>[A-Za-z0-9_-]+):(?<address>.+)$/.exec(alternative);
-      if (!match?.groups) continue;
-
-      const { source, address } = match.groups;
-      const outcome = resolveSpecialVariable(source, address.trim());
-
-      if (SUPPORTED_SERVERLESS_SOURCES.has(source)) sawSupportedSource = true;
-      if (outcome.type === "value" && outcome.value !== undefined) return outcome;
-      if (outcome.type === "skip") continue;
-    }
-
-    return sawSupportedSource ? { type: "missing" } : { type: "skip" };
-  };
-
-  const resolveString = (value: string, currentPath: string): unknown => {
-    const exactMatch = /^\$\{([^{}]+)\}$/.exec(value);
-    if (exactMatch) {
-      const outcome = resolveVariableExpression(exactMatch[1]);
-      if (outcome.type === "value") return resolveNode(outcome.value, currentPath);
-      if (outcome.type === "missing") {
-        throw new Error(
-          `Unable to resolve Serverless variable "${value}" at "${currentPath}".`,
-        );
-      }
-      return value;
-    }
-
-    return value.replace(/\$\{([^{}]+)\}/g, (full, expression) => {
-      const outcome = resolveVariableExpression(expression);
-      if (outcome.type === "skip") return full;
-      if (outcome.type === "missing") {
-        throw new Error(
-          `Unable to resolve Serverless variable "${full}" at "${currentPath}".`,
-        );
-      }
-      if (
-        outcome.value !== null &&
-        typeof outcome.value === "object"
-      ) {
-        throw new Error(
-          `Serverless variable "${full}" at "${currentPath}" resolved to a non-scalar value inside a larger string.`,
-        );
-      }
-      return String(outcome.value ?? "");
-    });
-  };
-
-  const resolveNode = (value: unknown, currentPath: string): unknown => {
-    if (typeof value === "string") {
-      return resolveString(value, currentPath);
-    }
-    if (Array.isArray(value)) {
-      return value.map((entry, index) =>
-        resolveNode(entry, `${currentPath}[${index}]`),
-      );
-    }
-    if (value && typeof value === "object") {
-      const resolvedEntries = Object.entries(value as Record<string, unknown>)
-        .map(([key, entry]) => [key, resolveNode(entry, `${currentPath}.${key}`)] as const)
-        .filter(([, entry]) => entry !== null);
-      return Object.fromEntries(resolvedEntries);
-    }
-    return value;
-  };
-
-  return resolveNode(input, "$");
+export function resolveServerlessVariables(
+  input: unknown,
+  options: ResolveServerlessVariablesOptions = {},
+): unknown {
+  return resolveDefinitionVariables(input, {
+    entryFilePath: options.filePath,
+    parseContent: (content) => parseCfnYaml(content),
+  });
 }
 
 function requireString(value: unknown, description: string): string {
@@ -1318,7 +1172,9 @@ export function adaptServerlessConfig(
     throw new Error(`Failed to parse serverless.yml: ${filePath}`);
   }
 
-  const resolved = resolveServerlessVariables(parsed) as Record<string, unknown>;
+  const resolved = resolveServerlessVariables(parsed, {
+    filePath,
+  }) as Record<string, unknown>;
   const topLevel = adaptTopLevelServerlessConfig(resolved);
   const resourceModel = adaptServerlessResources(resolved, topLevel, filePath);
   const mergedFunctions = mergeFunctions(topLevel, resourceModel);
