@@ -8,6 +8,11 @@
 
 import type { ServiceModel } from "../model.js";
 
+export interface DefinitionPluginLoadOptions {
+  /** Values used by `${opt:...}` variable resolution. */
+  opt?: Record<string, unknown>;
+}
+
 /**
  * Contract for a definition plugin.
  *
@@ -29,7 +34,7 @@ export interface DefinitionPlugin {
    *
    * Must throw with a clear message on validation failure.
    */
-  load(filePath: string): ServiceModel;
+  load(filePath: string, options?: DefinitionPluginLoadOptions): ServiceModel;
 
   /**
    * Generate starter config file content.

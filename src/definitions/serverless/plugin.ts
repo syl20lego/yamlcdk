@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import type { DefinitionPlugin } from "../../compiler/plugins/index.js";
+import type { DefinitionPluginLoadOptions } from "../../compiler/plugins/index.js";
 import type { ServiceModel } from "../../compiler/model.js";
 import { parseCfnYaml } from "../cloudformation/cfn-yaml.js";
 import { adaptServerlessConfig } from "./adapt.js";
@@ -61,10 +62,10 @@ export const serverlessDefinitionPlugin: DefinitionPlugin = {
     }
   },
 
-  load(filePath: string): ServiceModel {
+  load(filePath: string, options: DefinitionPluginLoadOptions = {}): ServiceModel {
     const content = fs.readFileSync(filePath, "utf8");
     const parsed = parseCfnYaml(content);
-    return adaptServerlessConfig(parsed, filePath);
+    return adaptServerlessConfig(parsed, filePath, options);
   },
 
   generateStarter(): string {

@@ -8,10 +8,14 @@ export interface RemoveOptions {
   profile?: string;
   account?: string;
   force?: boolean;
+  opt?: Record<string, unknown>;
 }
 
 export function runRemove(options: RemoveOptions): void {
-  const model = resolveModelOverrides(loadModel(options.config), options);
+  const model = resolveModelOverrides(
+    loadModel(options.config, { opt: options.opt }),
+    options,
+  );
   assertModelResolution(model);
   cdkDestroy(model, options.force ?? false);
 }

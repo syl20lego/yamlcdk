@@ -7,10 +7,14 @@ export interface DiffOptions {
   region?: string;
   profile?: string;
   account?: string;
+  opt?: Record<string, unknown>;
 }
 
 export function runDiff(options: DiffOptions): void {
-  const model = resolveModelOverrides(loadModel(options.config), options);
+  const model = resolveModelOverrides(
+    loadModel(options.config, { opt: options.opt }),
+    options,
+  );
   assertModelResolution(model);
   cdkDiff(model);
 }

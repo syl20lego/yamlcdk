@@ -511,7 +511,7 @@ Supported Serverless variable sources today:
 - `${sls:service}`
 - `${aws:region}`
 - `${aws:accountId}` when the account is available via config or environment
-- `${opt:...}` only when used with a fallback, for example `${opt:stage, 'dev'}`
+- `${opt:...}` from CLI options, with optional fallback, for example `${opt:memory, 1024}` with `yamlcdk deploy --memory 2048`
 - `${file(path):selector}` with optional fallback, for example `${file(./global.yml):custom.region, 'us-east-1'}`
 
 `file(path)` resolution rules:

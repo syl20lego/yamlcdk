@@ -13,6 +13,7 @@
 
 import fs from "node:fs";
 import type { DefinitionPlugin } from "../../compiler/plugins/index.js";
+import type { DefinitionPluginLoadOptions } from "../../compiler/plugins/index.js";
 import type { ServiceModel } from "../../compiler/model.js";
 import { parseCfnYaml } from "./cfn-yaml.js";
 import { adaptCfnTemplate } from "./adapt.js";
@@ -148,7 +149,7 @@ export const cloudformationDefinitionPlugin: DefinitionPlugin = {
     }
   },
 
-  load(filePath: string): ServiceModel {
+  load(filePath: string, options: DefinitionPluginLoadOptions = {}): ServiceModel {
     const content = fs.readFileSync(filePath, "utf8");
     const parsed = parseCfnYaml(content);
     if (!parsed || typeof parsed !== "object") {
@@ -159,6 +160,7 @@ export const cloudformationDefinitionPlugin: DefinitionPlugin = {
     const resolved = resolveDefinitionVariables(parsed, {
       entryFilePath: filePath,
       parseContent: (yamlContent) => parseCfnYaml(yamlContent),
+      opt: options.opt,
     });
     return adaptCfnTemplate(resolved, filePath);
   },

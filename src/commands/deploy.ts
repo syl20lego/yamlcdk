@@ -8,10 +8,14 @@ export interface DeployOptions {
   profile?: string;
   account?: string;
   requireApproval?: boolean;
+  opt?: Record<string, unknown>;
 }
 
 export function runDeploy(options: DeployOptions): void {
-  const model = resolveModelOverrides(loadModel(options.config), options);
+  const model = resolveModelOverrides(
+    loadModel(options.config, { opt: options.opt }),
+    options,
+  );
   assertModelResolution(model);
   cdkDeploy(model, options.requireApproval ?? false);
 }

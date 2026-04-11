@@ -7,10 +7,14 @@ export interface BootstrapOptions {
   region?: string;
   profile?: string;
   account?: string;
+  opt?: Record<string, unknown>;
 }
 
 export function runBootstrap(options: BootstrapOptions): void {
-  const model = resolveModelOverrides(loadModel(options.config), options);
+  const model = resolveModelOverrides(
+    loadModel(options.config, { opt: options.opt }),
+    options,
+  );
   assertModelResolution(model);
   cdkBootstrap(model);
 }

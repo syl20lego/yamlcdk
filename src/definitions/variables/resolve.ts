@@ -29,6 +29,7 @@ interface ParsedVariableToken {
 export interface ResolveDefinitionVariablesOptions {
   entryFilePath?: string;
   parseContent: (content: string, filePath: string) => unknown;
+  opt?: Record<string, unknown>;
 }
 
 function splitTemplateParts(value: string): TemplatePart[] {
@@ -239,6 +240,42 @@ function parseVariableToken(token: string): ParsedVariableToken | undefined {
   };
 }
 
+function toCamelCaseOptionName(value: string): string {
+  return value.replace(/-([a-zA-Z0-9])/g, (_match, letter: string) =>
+    letter.toUpperCase(),
+  );
+}
+
+function toKebabCaseOptionName(value: string): string {
+  return value
+    .replace(/([a-z0-9])([A-Z])/g, "$1-$2")
+    .replace(/_/g, "-")
+    .toLowerCase();
+}
+
+function resolveOptVariableValue(
+  optionSource: Record<string, unknown> | undefined,
+  address: string,
+): unknown {
+  if (!optionSource) return undefined;
+
+  const key = address.trim();
+  if (!key) return undefined;
+
+  const candidates = [
+    key,
+    toCamelCaseOptionName(key),
+    toKebabCaseOptionName(key),
+  ];
+  for (const candidate of candidates) {
+    if (Object.prototype.hasOwnProperty.call(optionSource, candidate)) {
+      return optionSource[candidate];
+    }
+  }
+
+  return undefined;
+}
+
 function toScalarString(value: unknown, description: string): string {
   if (value !== null && typeof value === "object") {
     throw new Error(`${description} must resolve to a scalar value.`);
@@ -370,7 +407,17 @@ export function resolveDefinitionVariables(
       }
 
       if (source === "opt") {
-        return { type: "missing" };
+        const optionValue = resolveOptVariableValue(options.opt, address);
+        if (optionValue === undefined) return { type: "missing" };
+
+        if (typeof optionValue === "string") {
+          const parsedLiteral = parseLiteralVariableToken(optionValue);
+          if (parsedLiteral !== undefined) {
+            return { type: "value", value: parsedLiteral };
+          }
+        }
+
+        return { type: "value", value: optionValue };
       }
 
       if (source === "sls") {

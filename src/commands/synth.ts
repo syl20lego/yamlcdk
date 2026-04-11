@@ -7,10 +7,14 @@ export interface SynthOptions {
   region?: string;
   profile?: string;
   account?: string;
+  opt?: Record<string, unknown>;
 }
 
 export function runSynth(options: SynthOptions): void {
-  const model = resolveModelOverrides(loadModel(options.config), options);
+  const model = resolveModelOverrides(
+    loadModel(options.config, { opt: options.opt }),
+    options,
+  );
   assertModelResolution(model);
   cdkSynth(model);
 }

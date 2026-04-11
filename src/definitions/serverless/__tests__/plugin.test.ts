@@ -117,6 +117,29 @@ dev:
     expect(model.provider.region).toBe("ca-central-1");
   });
 
+  test("resolves ${opt:...} variables from CLI options before fallback defaults", () => {
+    const resolved = resolveServerlessVariables(
+      parseCfnYaml(`
+service: demo
+provider:
+  name: aws
+functions:
+  hello:
+    handler: src/hello.handler
+    memorySize: \${opt:memory, 1024}
+`),
+      {
+        opt: {
+          memory: "2048",
+        },
+      },
+    ) as Record<string, unknown>;
+
+    const functions = resolved.functions as Record<string, unknown>;
+    const hello = functions.hello as Record<string, unknown>;
+    expect(hello.memorySize).toBe(2048);
+  });
+
   test("supports fallback alternatives when a file variable cannot be resolved", () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), "yamlcdk-serverless-fallback-"));
     const serverlessPath = path.join(dir, "serverless.yml");
@@ -150,6 +173,33 @@ custom:
 
     const model = serverlessDefinitionPlugin.load(serverlessPath);
     expect(model.provider.region).toBe("us-east-1");
+  });
+
+  test("definition plugin load passes CLI opt values into variable resolution", () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "yamlcdk-serverless-opt-"));
+    const serverlessPath = path.join(dir, "serverless.yml");
+
+    fs.writeFileSync(
+      serverlessPath,
+      `
+service: demo
+provider:
+  name: aws
+  region: us-east-1
+functions:
+  hello:
+    handler: src/hello.handler
+    memorySize: \${opt:memory, 1024}
+`,
+      "utf8",
+    );
+
+    const model = serverlessDefinitionPlugin.load(serverlessPath, {
+      opt: {
+        memory: "2048",
+      },
+    });
+    expect(model.functions.hello.memorySize).toBe(2048);
   });
 });
 

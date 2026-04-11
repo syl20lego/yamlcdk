@@ -6,6 +6,7 @@
  */
 
 import type { DefinitionPlugin } from "../../compiler/plugins/index.js";
+import type { DefinitionPluginLoadOptions } from "../../compiler/plugins/index.js";
 import type {
   ServiceModel,
   EventDeclaration,
@@ -242,8 +243,8 @@ export const yamlcdkDefinitionPlugin: DefinitionPlugin = {
     return basename !== "serverless.yml" && basename !== "serverless.yaml";
   },
 
-  load(filePath: string): ServiceModel {
-    const raw = loadRawConfig(filePath);
+  load(filePath: string, options: DefinitionPluginLoadOptions = {}): ServiceModel {
+    const raw = loadRawConfig(filePath, { opt: options.opt });
     const normalized = normalizeConfig(raw);
     return adaptConfig(normalized);
   },

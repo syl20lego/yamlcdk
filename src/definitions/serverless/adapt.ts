@@ -146,6 +146,7 @@ function getPathValue(root: unknown, dottedPath: string): unknown {
 
 interface ResolveServerlessVariablesOptions {
   filePath?: string;
+  opt?: Record<string, unknown>;
 }
 
 export function resolveServerlessVariables(
@@ -155,6 +156,7 @@ export function resolveServerlessVariables(
   return resolveDefinitionVariables(input, {
     entryFilePath: options.filePath,
     parseContent: (content) => parseCfnYaml(content),
+    opt: options.opt,
   });
 }
 
@@ -1164,9 +1166,14 @@ function validateManagedReferences(
   }
 }
 
+interface AdaptServerlessConfigOptions {
+  opt?: Record<string, unknown>;
+}
+
 export function adaptServerlessConfig(
   parsed: unknown,
   filePath: string,
+  options: AdaptServerlessConfigOptions = {},
 ): ServiceModel {
   if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) {
     throw new Error(`Failed to parse serverless.yml: ${filePath}`);
@@ -1174,6 +1181,7 @@ export function adaptServerlessConfig(
 
   const resolved = resolveServerlessVariables(parsed, {
     filePath,
+    opt: options.opt,
   }) as Record<string, unknown>;
   const topLevel = adaptTopLevelServerlessConfig(resolved);
   const resourceModel = adaptServerlessResources(resolved, topLevel, filePath);

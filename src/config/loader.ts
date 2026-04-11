@@ -7,9 +7,13 @@
 
 import type { ServiceModel } from "../compiler/model.js";
 import { parseServiceModel } from "../compiler/model.js";
+import type { DefinitionPluginLoadOptions } from "../compiler/plugins/index.js";
 import { definitionRegistry } from "../definitions/registry.js";
 
-export function loadModel(filePath: string): ServiceModel {
+export function loadModel(
+  filePath: string,
+  options: DefinitionPluginLoadOptions = {},
+): ServiceModel {
   const plugin = definitionRegistry.resolve(filePath);
-  return parseServiceModel(plugin.load(filePath));
+  return parseServiceModel(plugin.load(filePath, options));
 }

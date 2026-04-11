@@ -12,7 +12,10 @@ export {
   type SynthesisResult,
 } from "./domain-plugin.js";
 
-export { type DefinitionPlugin } from "./definition-plugin.js";
+export {
+  type DefinitionPlugin,
+  type DefinitionPluginLoadOptions,
+} from "./definition-plugin.js";
 
 export {
   PluginRegistry,
