@@ -4,7 +4,7 @@ import path from "node:path";
 import { describe, expect, test } from "vitest";
 import { normalizeConfig } from "../normalize.js";
 import { resolveAwsConfig } from "../../runtime/aws.js";
-import { assertTemplateOnlyStack, cdkBootstrap, deployMode } from "../../runtime/cdk.js";
+import { assertTemplateOnlyStack, deployMode } from "../../runtime/cdk.js";
 import {
   normalizedServiceConfigSchema,
   validateServiceConfig,
@@ -61,10 +61,6 @@ describe("config validation", () => {
     });
     const normalized = normalizeConfig(raw);
     expect(() => resolveAwsConfig(normalized, { region: "" })).toThrow();
-  });
-
-  test("cdkBootstrap symbol is exported", () => {
-    expect(typeof cdkBootstrap).toBe("function");
   });
 
   test("supports provider deployment overrides", () => {

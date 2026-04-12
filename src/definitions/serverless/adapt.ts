@@ -41,6 +41,7 @@ interface ServerlessProviderConfig {
   tags?: unknown;
   account?: unknown;
   iam?: unknown;
+  deployment?: unknown;
   deploymentBucket?: unknown;
 }
 
@@ -178,6 +179,14 @@ function optionalNumber(value: unknown, description: string): number | undefined
   if (value === undefined) return undefined;
   if (typeof value !== "number" || !Number.isFinite(value)) {
     throw new Error(`${description} must be a number.`);
+  }
+  return value;
+}
+
+function optionalBoolean(value: unknown, description: string): boolean | undefined {
+  if (value === undefined) return undefined;
+  if (typeof value !== "boolean") {
+    throw new Error(`${description} must be a boolean.`);
   }
   return value;
 }
@@ -900,6 +909,10 @@ function adaptTopLevelServerlessConfig(
   };
 
   const providerIam = optionalObject(rawProvider.iam, "provider.iam");
+  const providerDeployment = optionalObject(
+    rawProvider.deployment,
+    "provider.deployment",
+  );
   const deploymentBucket = optionalObject(
     rawProvider.deploymentBucket,
     "provider.deploymentBucket",
@@ -912,11 +925,23 @@ function adaptTopLevelServerlessConfig(
     deploymentBucket?.name,
     "provider.deploymentBucket.name",
   );
-  if (cloudFormationExecutionRoleArn || fileAssetsBucketName) {
-    provider.deployment = {
-      cloudFormationExecutionRoleArn,
-      fileAssetsBucketName,
-    };
+  const requireBootstrap = optionalBoolean(
+    providerDeployment?.requireBootstrap,
+    "provider.deployment.requireBootstrap",
+  );
+
+  const deployment: NonNullable<ProviderConfig["deployment"]> = {};
+  if (cloudFormationExecutionRoleArn) {
+    deployment.cloudFormationExecutionRoleArn = cloudFormationExecutionRoleArn;
+  }
+  if (fileAssetsBucketName) {
+    deployment.fileAssetsBucketName = fileAssetsBucketName;
+  }
+  if (requireBootstrap !== undefined) {
+    deployment.requireBootstrap = requireBootstrap;
+  }
+  if (Object.keys(deployment).length > 0) {
+    provider.deployment = deployment;
   }
 
   const stackName =

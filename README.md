@@ -1,6 +1,6 @@
 # yamlcdk
 
-`yamlcdk` ("AWS YAML") is a CLI for defining AWS infrastructure in YAML, turning it into AWS CDK/CloudFormation stacks, and running the usual deployment workflow from the command line: initialize config, validate it, synthesize a template, bootstrap an environment, diff changes, deploy, and remove stacks.
+`yamlcdk` ("AWS YAML for CDK") is a CLI for defining AWS infrastructure in YAML, turning it into AWS CDK/CloudFormation stacks, and running the usual deployment workflow from the command line: initialize config, validate it, synthesize a template, diff changes, deploy, and remove stacks.
 
 yamlcdk supports three input formats:
 
@@ -55,7 +55,6 @@ Create a starter config, validate it, synthesize the template, then deploy it:
 yamlcdk init -c yamlcdk.yml
 yamlcdk validate -c yamlcdk.yml
 yamlcdk synth -c yamlcdk.yml --region us-east-1 > stack.template.json
-yamlcdk bootstrap -c yamlcdk.yml --region us-east-1 --account 123456789012
 yamlcdk deploy -c yamlcdk.yml --region us-east-1
 ```
 
@@ -75,7 +74,7 @@ yamlcdk validate -c serverless.yml
 yamlcdk synth -c serverless.yml --region us-east-1 > stack.template.json
 ```
 
-`bootstrap` is usually a one-time step per account/region when you are using the default CDK deployment mode.
+If your stack needs a bootstrapped CDK environment, run `npx cdk bootstrap` manually (details below).
 
 You can also start from `examples/service.yml` (yamlcdk format), `examples/serverless.yml` (Serverless format), or `examples/cloudformation.yml` (CloudFormation format) for broader samples.
 
@@ -86,14 +85,13 @@ You can also start from `examples/service.yml` (yamlcdk format), `examples/serve
 | `init` | Create a starter config file. | `-c, --config <path>` (default: `yamlcdk.yml`), `-f, --format <format>` (`yamlcdk`, `serverless`, or `cloudformation`, default: `yamlcdk`) |
 | `validate` | Load and validate a config file. | `-c, --config <path>` (default: `yamlcdk.yml`) |
 | `synth` | Synthesize a CloudFormation template and print it to stdout. | shared AWS flags |
-| `bootstrap` | Bootstrap the target CDK environment. | shared AWS flags |
 | `diff` | Show the CDK diff for the stack. | shared AWS flags |
 | `deploy` | Deploy the stack. | shared AWS flags + `--require-approval` |
 | `remove` | Destroy the stack. | shared AWS flags + `--force` |
 
 ## Shared flags
 
-The following flags are available on `synth`, `bootstrap`, `diff`, `deploy`, and `remove`:
+The following flags are available on `synth`, `diff`, `deploy`, and `remove`:
 
 - `-c, --config <path>` - config file path. Required on these commands.
 - `--region <region>` - AWS region override.
@@ -104,6 +102,25 @@ Command-specific flags:
 
 - `deploy --require-approval` - keep approval for security-related changes. When omitted, yamlcdk deploys with approval disabled. This flag is not supported when `provider.deployment.cloudFormationServiceRoleArn` is set.
 - `remove --force` - skip the destroy confirmation prompt. Use this in CI or any non-interactive shell.
+
+## CDK bootstrap (manual when required)
+
+yamlcdk does not run `cdk bootstrap` for you. Bootstrap is still required for environments that depend on CDKToolkit bootstrap resources (for example many `DefaultStackSynthesizer`-based deployments).
+
+Run bootstrap directly with CDK (typically once per account/region):
+
+```bash
+npx cdk bootstrap aws://123456789012/us-east-1
+npx cdk bootstrap aws://123456789012/us-east-1 --profile my-profile
+```
+
+To skip the synthesized bootstrap version rule when you are intentionally managing deployment infrastructure:
+
+- yamlcdk format: `provider.deployment.requireBootstrap: false`
+- Serverless format: `provider.deployment.requireBootstrap: false` (or mapped explicit infrastructure via `provider.deploymentBucket.name` / `provider.iam.deploymentRole`)
+- CloudFormation format: `Metadata.yamlcdk.deployment.requireBootstrap: false`
+
+`requireBootstrap: false` controls the synthesized bootstrap rule only; it does not guarantee that every deployment mode is bootstrapless.
 
 ## Config file shape
 
@@ -604,6 +621,7 @@ Notes:
 - Top-level Serverless config is primary; custom resources may augment generated functions and managed resources, but not override generated function logical IDs.
 - `provider.deploymentBucket.name` maps to yamlcdk `provider.deployment.fileAssetsBucketName`.
 - `provider.iam.deploymentRole` maps to yamlcdk `provider.deployment.cloudFormationExecutionRoleArn`.
+- `provider.deployment.requireBootstrap` maps to yamlcdk `provider.deployment.requireBootstrap`.
 - With that mapped pair, yamlcdk uses explicit deployment infrastructure and does not synthesize the CDK bootstrap version rule for the stack.
 - External SQS/SNS/DynamoDB event targets are not supported yet by the current yamlcdk domain model.
 
@@ -746,8 +764,7 @@ When adapting `examples/service.yml`, choose one supported deployment mode at a 
 - If `provider.stackName` is not set, yamlcdk uses a sanitized `<service>-<stage>` stack name.
 - yamlcdk adds `Service` and `Stage` stack tags automatically, then applies any extra `provider.tags`.
 - Generated resource names are stage-scoped. For example, logical names like `jobs` or `users` become physical resource names with the stage suffix.
-- `bootstrap` uses the resolved region and, when supplied, the resolved account. `--account` is especially useful when you want an explicit bootstrap target.
-- `deploy` will auto-run bootstrap once and retry only in the default deployment mode. If custom `provider.deployment` overrides are configured, yamlcdk will not auto-bootstrap for you.
+- `deploy` does not run bootstrap automatically. Run `npx cdk bootstrap ...` manually when your deployment mode requires it.
 - If `remove` runs in a non-interactive shell, pass `--force`.
 - `synth` prints the generated CloudFormation template to stdout.
 - `deploy` prints CloudFormation stack outputs after a successful deployment when available.

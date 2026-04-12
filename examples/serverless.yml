@@ -6,6 +6,8 @@ provider:
   runtime: nodejs20.x
   iam:
     deploymentRole: arn:aws:iam::638914547607:role/AldoDefaultCFNRole
+  deployment:
+    requireBootstrap: false
   deploymentBucket:
     name: aldo-serverless-build-omni-hybris-lab-dev-us-east-1
   tags:

@@ -1,6 +1,5 @@
 #!/usr/bin/env node
 import { Command } from "commander";
-import { runBootstrap } from "./commands/bootstrap.js";
 import { runDeploy } from "./commands/deploy.js";
 import { runDiff } from "./commands/diff.js";
 import { runInit } from "./commands/init.js";
@@ -119,21 +118,6 @@ withAwsFlags(program.command("synth").description("Synthesize CloudFormation"))
       account?: string;
     }) => {
       runSynth({
-        ...opts,
-        opt: collectCliOptionVariables(process.argv.slice(2)),
-      });
-    },
-  );
-
-withAwsFlags(program.command("bootstrap").description("Bootstrap CDK environment"))
-  .action(
-    (opts: {
-      config: string;
-      region?: string;
-      profile?: string;
-      account?: string;
-    }) => {
-      runBootstrap({
         ...opts,
         opt: collectCliOptionVariables(process.argv.slice(2)),
       });

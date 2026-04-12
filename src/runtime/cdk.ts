@@ -16,115 +16,10 @@ const require = createRequire(import.meta.url);
  */
 type CdkRuntimeConfig = ServiceModel | NormalizedServiceConfig;
 
-class CdkBootstrapMissingError extends Error {
-  constructor(
-    readonly account: string | undefined,
-    readonly region: string,
-    readonly cdkCommand: string,
-    readonly yamlcdkCommand: string,
-    readonly hasAssumeRoleWarning: boolean,
-  ) {
-    super(
-      `CDK bootstrap is missing for this AWS environment.\n` +
-        `Reason: CDK could not find the bootstrap SSM parameter (/cdk-bootstrap/.../version).\n` +
-        `${hasAssumeRoleWarning ? `Note: The "could not be used to assume ... deploy-role" warning is usually informational; the blocking issue is missing bootstrap.\n` : ""}` +
-        `${account ? `Detected target: account ${account}, region ${region}.\n` : `Detected region: ${region}.\n`}` +
-        `Run one of these:\n` +
-        `  ${yamlcdkCommand}\n` +
-        `  ${cdkCommand}\n` +
-        `Then retry your original command.`,
-    );
-  }
-}
-
-class CdkBootstrapDeleteFailedError extends Error {
-  constructor(
-    readonly account: string | undefined,
-    readonly region: string,
-    readonly roleHint: string | undefined,
-    readonly profile: string | undefined,
-  ) {
-    const bootstrapTarget = account ? `aws://${account}/${region}` : `<account>/${region}`;
-    super(
-      `CDK bootstrap failed because the existing CDKToolkit stack is stuck in DELETE_FAILED.\n` +
-        `Detected target: ${bootstrapTarget}.\n` +
-        `${roleHint ? `Likely blocker: IAM role still in use or protected (${roleHint}).\n` : ""}` +
-        `How to fix:\n` +
-        `  1) In CloudFormation console, open stack "CDKToolkit" in ${region}.\n` +
-        `  2) Delete or retain the failing IAM resource(s), then remove the failed stack.\n` +
-        `  3) Re-run bootstrap:\n` +
-        `     npx cdk bootstrap ${account ? `aws://${account}/${region}` : ""}${profile ? ` --profile ${profile}` : ""}\n` +
-        `  4) Retry deploy: yamlcdk deploy -c <config.yml>`,
-    );
-  }
-}
-
-class CdkBootstrapBucketConflictError extends Error {
-  constructor(
-    readonly account: string | undefined,
-    readonly region: string,
-    readonly conflictingBucket: string | undefined,
-  ) {
-    const target = account ? `aws://${account}/${region}` : `<account>/${region}`;
-    super(
-      `CDK bootstrap failed because the default bootstrap bucket already exists outside the CDKToolkit stack.\n` +
-        `Detected target: ${target}.\n` +
-        `${conflictingBucket ? `Conflicting bucket: ${conflictingBucket}\n` : ""}` +
-        `Why this happens: your deploy is using custom deployment settings, but auto-bootstrap attempted to create default CDKToolkit resources.\n` +
-        `What to do:\n` +
-        `  - Keep your custom provider.deployment config and skip bootstrap, OR\n` +
-        `  - Manually clean up/reconcile the existing default bootstrap resources before bootstrapping.\n` +
-        `Tip: set provider.deployment.requireBootstrap=false for custom deployment mode.`,
-    );
-  }
-}
-
-function hasCustomDeploymentOverrides(config: CdkRuntimeConfig): boolean {
-  const deployment = config.provider.deployment;
-  return Boolean(
-    deployment?.fileAssetsBucketName ||
-      deployment?.imageAssetsRepositoryName ||
-      deployment?.cloudFormationServiceRoleArn ||
-      deployment?.cloudFormationExecutionRoleArn ||
-      deployment?.deployRoleArn ||
-      deployment?.useCliCredentials,
-  );
-}
-
 function extractAccountFromRoleArn(roleArn?: string): string | undefined {
   if (!roleArn) return undefined;
   const match = roleArn.match(/^arn:aws:iam::(\d{12}):role\/.+/i);
   return match?.[1];
-}
-
-function inferBootstrapAccountRegion(
-  config: CdkRuntimeConfig,
-  output: string,
-  env: NodeJS.ProcessEnv,
-): { account?: string; region?: string } {
-  const account =
-    env.CDK_DEFAULT_ACCOUNT ??
-    config.provider.account ??
-    extractAccountFromRoleArn(config.provider.deployment?.deployRoleArn) ??
-    extractAccountFromRoleArn(
-      config.provider.deployment?.cloudFormationExecutionRoleArn,
-    );
-  const region = env.CDK_DEFAULT_REGION ?? env.AWS_REGION;
-  if (account && region) {
-    return { account, region };
-  }
-
-  const roleMatch = output.match(
-    /arn:aws:iam::(\d{12}):role\/cdk-[^-]+-deploy-role-\d{12}-([a-z0-9-]+)/i,
-  );
-  if (roleMatch) {
-    return {
-      account: account ?? roleMatch[1],
-      region: region ?? roleMatch[2],
-    };
-  }
-
-  return { account, region };
 }
 
 function resolveCdkBin(): string {
@@ -156,11 +51,7 @@ function resolveCdkBin(): string {
   );
 }
 
-function runCdk(
-  config: CdkRuntimeConfig,
-  args: string[],
-  env: NodeJS.ProcessEnv,
-): void {
+function runCdk(args: string[], env: NodeJS.ProcessEnv): void {
   const cdkBin = resolveCdkBin();
   const result = spawnSync(process.execPath, [cdkBin, ...args], {
     env,
@@ -170,9 +61,6 @@ function runCdk(
   if (result.stderr) process.stderr.write(result.stderr);
   if (result.status !== 0) {
     const output = `${result.stdout ?? ""}\n${result.stderr ?? ""}`;
-    const hasBootstrapError =
-      /\/cdk-bootstrap\/.+\/version not found/i.test(output) ||
-      /Has the environment been bootstrapped\?/i.test(output);
     const hasDestroyTtyConfirmationError =
       /Destroying stacks is an irreversible action, but terminal \(TTY\) is not attached/i.test(
         output,
@@ -180,58 +68,6 @@ function runCdk(
       /destroy/i.test(args.join(" "));
     const hasLambdaUnzippedSizeError =
       /Unzipped size must be smaller than 262144000 bytes/i.test(output);
-    const hasBootstrapDeleteFailed =
-      /CDKToolkit/i.test(output) &&
-      /DELETE_FAILED/i.test(output) &&
-      /bootstrap/i.test(args.join(" "));
-    const hasBootstrapBucketConflict =
-      /CDKToolkit/i.test(output) &&
-      /StagingBucket/i.test(output) &&
-      /already exists/i.test(output) &&
-      /bootstrap/i.test(args.join(" "));
-    const hasAssumeRoleWarning =
-      /current credentials could not be used to assume/i.test(output);
-    if (hasBootstrapDeleteFailed) {
-      const inferred = inferBootstrapAccountRegion(config, output, env);
-      const roleMatch = output.match(/\[(.+Role)\]/i);
-      const roleHint = roleMatch?.[1];
-      throw new CdkBootstrapDeleteFailedError(
-        inferred.account,
-        inferred.region ?? "us-east-1",
-        roleHint,
-        env.AWS_PROFILE,
-      );
-    }
-    if (hasBootstrapBucketConflict) {
-      const inferred = inferBootstrapAccountRegion(config, output, env);
-      const bucketMatch = output.match(
-        /identifier '([^']+)' already exists/i,
-      );
-      throw new CdkBootstrapBucketConflictError(
-        inferred.account,
-        inferred.region ?? "us-east-1",
-        bucketMatch?.[1],
-      );
-    }
-    if (hasBootstrapError) {
-      const inferred = inferBootstrapAccountRegion(config, output, env);
-      const account = inferred.account;
-      const region = inferred.region ?? "us-east-1";
-      const bootstrapTarget = account ? `aws://${account}/${region}` : "";
-      const cdkCommand = bootstrapTarget
-        ? `npx cdk bootstrap ${bootstrapTarget}${env.AWS_PROFILE ? ` --profile ${env.AWS_PROFILE}` : ""}`
-        : `npx cdk bootstrap${env.AWS_PROFILE ? ` --profile ${env.AWS_PROFILE}` : ""}`;
-      const yamlcdkCommand = account
-        ? `yamlcdk bootstrap -c <config.yml> --account ${account} --region ${region}${env.AWS_PROFILE ? ` --profile ${env.AWS_PROFILE}` : ""}`
-        : `yamlcdk bootstrap -c <config.yml> --region ${region}${env.AWS_PROFILE ? ` --profile ${env.AWS_PROFILE}` : ""}`;
-      throw new CdkBootstrapMissingError(
-        account,
-        region,
-        cdkCommand,
-        yamlcdkCommand,
-        hasAssumeRoleWarning,
-      );
-    }
     if (hasLambdaUnzippedSizeError) {
       throw new Error(
         `Lambda deployment package is too large (unzipped > 250 MB).\n` +
@@ -417,46 +253,13 @@ export function cdkDeploy(config: CdkRuntimeConfig, requireApproval: boolean): v
     ...cdkCloudFormationRoleArgs(config),
     ...(requireApproval ? [] : ["--require-approval", "never"]),
   ];
-  try {
-    runCdk(config, deployArgs, env);
-    printStackOutputs(config, env);
-  } catch (error) {
-    if (error instanceof CdkBootstrapMissingError) {
-      if (hasCustomDeploymentOverrides(config)) {
-        throw new Error(
-          `Bootstrap is missing, but custom provider.deployment overrides are configured.\n` +
-            `yamlcdk will not auto-bootstrap in this mode to avoid creating conflicting default CDKToolkit resources.\n` +
-            `Note: requireBootstrap may already be inferred as false, but using deployRoleArn still uses DefaultStackSynthesizer, which requires a bootstrapped environment.\n` +
-            `Choose one:\n` +
-            `  1) Keep role overrides and bootstrap once (yamlcdk bootstrap -c <config.yml> --account <account> --region <region>)\n` +
-            `  2) Use CLI-credentials mode: remove deployRoleArn and set useCliCredentials: true (optionally keeping cloudFormationExecutionRoleArn) with your asset bucket overrides.`,
-        );
-      }
-      const bootstrapTarget = error.account
-        ? `aws://${error.account}/${error.region}`
-        : undefined;
-      process.stderr.write(
-        `\nyamlcdk: Bootstrap is missing. Running bootstrap automatically, then retrying deploy...\n`,
-      );
-      runCdk(config, ["bootstrap", ...(bootstrapTarget ? [bootstrapTarget] : [])], env);
-      runCdk(config, deployArgs, env);
-      printStackOutputs(config, env);
-      return;
-    }
-    if (error instanceof CdkBootstrapDeleteFailedError) {
-      throw error;
-    }
-    if (error instanceof CdkBootstrapBucketConflictError) {
-      throw error;
-    }
-    throw error;
-  }
+  runCdk(deployArgs, env);
+  printStackOutputs(config, env);
 }
 
 export function cdkDiff(config: CdkRuntimeConfig): void {
   const outdir = synthToTemp(config);
   runCdk(
-    config,
     ["diff", config.stackName, "--app", outdir, ...cdkCloudFormationRoleArgs(config)],
     buildEnv(config),
   );
@@ -465,7 +268,6 @@ export function cdkDiff(config: CdkRuntimeConfig): void {
 export function cdkDestroy(config: CdkRuntimeConfig, force: boolean): void {
   const outdir = synthToTemp(config);
   runCdk(
-    config,
     [
       "destroy",
       config.stackName,
@@ -476,12 +278,4 @@ export function cdkDestroy(config: CdkRuntimeConfig, force: boolean): void {
     ],
     buildEnv(config),
   );
-}
-
-export function cdkBootstrap(config: CdkRuntimeConfig): void {
-  const env = buildEnv(config);
-  const target = config.provider.account
-    ? `aws://${config.provider.account}/${config.provider.region}`
-    : undefined;
-  runCdk(config, ["bootstrap", ...(target ? [target] : [])], env);
 }

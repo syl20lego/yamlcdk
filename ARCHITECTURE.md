@@ -580,7 +580,6 @@ src/
 │   ├── synth.ts                    # Load + override AWS config + synth
 │   ├── diff.ts                     # Load + override AWS config + diff
 │   ├── deploy.ts                   # Load + override AWS config + deploy
-│   ├── bootstrap.ts                # Bootstrap CDK environment
 │   └── remove.ts                   # Destroy stack
 ├── config/
 │   ├── load.ts                     # YAML read + raw schema validation
@@ -629,7 +628,7 @@ src/
 └── runtime/
     ├── aws.ts                      # AWS override validation and model resolution
     ├── build.ts                    # Function build preparation
-    └── cdk.ts                      # Synth, diff, deploy, bootstrap, remove runtime behavior
+    └── cdk.ts                      # Synth, diff, deploy, remove runtime behavior
 ```
 
 ## Terminology to keep consistent

@@ -556,6 +556,35 @@ functions:
     });
   });
 
+  test("maps provider.deployment.requireBootstrap into canonical deployment config", () => {
+    const model = adaptServerlessConfig(
+      parseCfnYaml(`
+service: demo
+provider:
+  name: aws
+  region: us-east-1
+  deployment:
+    requireBootstrap: false
+functions:
+  hello:
+    handler: src/hello.handler
+`),
+      "serverless.yml",
+    );
+
+    const { app, stack } = buildApp(model);
+    const assembly = app.synth();
+    const stackArtifact = assembly.getStackArtifact(model.stackName);
+    const rules =
+      (stackArtifact.template as { Rules?: Record<string, unknown> }).Rules ?? {};
+
+    expect(model.provider.deployment).toEqual({
+      requireBootstrap: false,
+    });
+    expect(stack.synthesizer.constructor.name).toBe("DefaultStackSynthesizer");
+    expect(Object.keys(rules)).toHaveLength(0);
+  });
+
   test("uses non-bootstrap synthesizer behavior for mapped Serverless deployment settings", () => {
     const model = adaptServerlessConfig(
       parseCfnYaml(`

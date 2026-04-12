@@ -137,4 +137,32 @@ functions:
     );
     expect(Object.keys(rules)).toHaveLength(0);
   });
+
+  test("maps Serverless provider.deployment.requireBootstrap so bootstrap rule can be skipped explicitly", () => {
+    const { model, stack } = buildDefinitionFromYaml(
+      `
+service: demo
+provider:
+  name: aws
+  region: us-east-1
+  deployment:
+    requireBootstrap: false
+functions:
+  hello:
+    handler: src/hello.handler
+`,
+      "serverless.yml",
+    );
+
+    const assembly = stack.node.root.synth();
+    const stackArtifact = assembly.getStackArtifact(model.stackName);
+    const rules =
+      (stackArtifact.template as { Rules?: Record<string, unknown> }).Rules ?? {};
+
+    expect(model.provider.deployment).toEqual({
+      requireBootstrap: false,
+    });
+    expect(stack.synthesizer.constructor.name).toBe("DefaultStackSynthesizer");
+    expect(Object.keys(rules)).toHaveLength(0);
+  });
 });
