@@ -83,7 +83,7 @@ program
   .option("-c, --config <path>", "Config file path", "yamlcdk.yml")
   .option(
     "-f, --format <format>",
-    "Config format (yamlcdk or cloudformation)",
+    "Config format (yamlcdk, serverless, or cloudformation)",
     "yamlcdk",
   )
   .action((opts: { config: string; format: string }) => {

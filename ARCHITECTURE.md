@@ -29,8 +29,10 @@ flowchart TD
     CLI["CLI<br/>src/cli.ts<br/>src/commands/*.ts"]
     Loader["Config loading<br/>src/config/load.ts<br/>src/config/loader.ts"]
     DefRegistry["DefinitionRegistry<br/>src/definitions/registry.ts"]
-    YamlcdkDef["yamlcdk plugin<br/>src/definitions/yamlcdk/plugin.ts"]
     CfnDef["cloudformation plugin<br/>src/definitions/cloudformation/plugin.ts"]
+    ServerlessDef["serverless plugin<br/>src/definitions/serverless/plugin.ts"]
+    YamlcdkDef["yamlcdk plugin<br/>src/definitions/yamlcdk/plugin.ts"]
+    Variables["Definition variable resolution<br/>src/definitions/variables/resolve.ts"]
     Schema["Zod schemas<br/>src/config/schema.ts"]
     Normalize["Normalization<br/>src/config/normalize.ts"]
     Model["Canonical model<br/>src/compiler/model.ts<br/>ServiceModel + DomainConfigs"]
@@ -43,11 +45,16 @@ flowchart TD
 
     CLI --> Loader
     Loader --> DefRegistry
-    DefRegistry --> YamlcdkDef
     DefRegistry --> CfnDef
-    YamlcdkDef --> Schema
-    CfnDef --> Model
+    DefRegistry --> ServerlessDef
+    DefRegistry --> YamlcdkDef
+    CfnDef --> Variables
+    ServerlessDef --> Variables
+    YamlcdkDef --> Variables
+    Variables --> Schema
     Schema --> Normalize
+    CfnDef --> Model
+    ServerlessDef --> Model
     Normalize --> Model
     Model --> Aws
     Aws --> Build
@@ -76,12 +83,13 @@ This layer is responsible for **file parsing, schema validation, and normalizati
 
 The definition layer translates a specific source format into the compiler's canonical model.
 
-`src/config/loader.ts` resolves the correct plugin through a shared `DefinitionRegistry` (defined in `src/definitions/registry.ts`). The registry is populated with all built-in plugins at startup; more specific plugins (cloudformation) are registered first so they take precedence over the catch-all (yamlcdk).
+`src/config/loader.ts` resolves the correct plugin through a shared `DefinitionRegistry` (defined in `src/definitions/registry.ts`). The registry is populated with all built-in plugins at startup in this priority order: cloudformation, serverless, yamlcdk (catch-all for remaining YAML files).
 
 **Built-in definition plugins:**
 
-- **`yamlcdkDefinitionPlugin`** (`src/definitions/yamlcdk/plugin.ts`) — handles `.yml`/`.yaml` files in the native yamlcdk format. Parses via `js-yaml`, validates with Zod, normalizes defaults, and adapts to `ServiceModel`.
 - **`cloudformationDefinitionPlugin`** (`src/definitions/cloudformation/plugin.ts`) — handles CloudFormation YAML templates. Detected by `AWSTemplateFormatVersion` or `Resources` with `AWS::*` types. Parses with a custom `js-yaml` schema that handles intrinsic functions (`!Ref`, `!GetAtt`, `!Sub`, `!Join`, etc.). Extracts Lambda functions, S3 buckets, DynamoDB tables, SQS queues, SNS topics, EventSourceMappings, EventBridge rules, and API Gateway V2 routes. Service-level config (service name, stage, region, tags) is read from the `Metadata.yamlcdk` section.
+- **`serverlessDefinitionPlugin`** (`src/definitions/serverless/plugin.ts`) — handles AWS `serverless.yml`/`serverless.yaml`. Resolves supported Serverless variables, adapts top-level Serverless config into the canonical model, and merges supported `resources.Resources` through the CloudFormation adaptation path.
+- **`yamlcdkDefinitionPlugin`** (`src/definitions/yamlcdk/plugin.ts`) — handles `.yml`/`.yaml` files in the native yamlcdk format. Parses via `js-yaml`, resolves definition variables, validates with Zod, normalizes defaults, and adapts to `ServiceModel`.
 
 Each plugin's job is to:
 
@@ -202,10 +210,11 @@ Definition plugins own the **format-to-model** translation step.
 
 Built-in definition plugins:
 
-- **`yamlcdkDefinitionPlugin`** (`src/definitions/yamlcdk/plugin.ts`) — its `canLoad()` matches any `.yml` or `.yaml` path (catch-all). Pipeline: `loadRawConfig()` → `validateServiceConfig()` → `normalizeConfig()` → `adaptConfig()` → `parseServiceModel()`.
 - **`cloudformationDefinitionPlugin`** (`src/definitions/cloudformation/plugin.ts`) — its `canLoad()` reads the first 4KB of `.yml`/`.yaml` files and looks for `AWSTemplateFormatVersion` or `Resources` with `Type: AWS::*`. Pipeline: `parseCfnYaml()` (custom js-yaml schema) → `adaptCfnTemplate()` → `parseServiceModel()`.
+- **`serverlessDefinitionPlugin`** (`src/definitions/serverless/plugin.ts`) — its `canLoad()` prefers `serverless.yml`/`serverless.yaml` and AWS Serverless signatures. Pipeline: `parseCfnYaml()` → `adaptServerlessConfig()` (variable resolution + Serverless adaptation + optional CloudFormation resource merge) → `parseServiceModel()`.
+- **`yamlcdkDefinitionPlugin`** (`src/definitions/yamlcdk/plugin.ts`) — its `canLoad()` matches remaining `.yml`/`.yaml` paths (catch-all). Pipeline: `loadRawConfig()` → `validateServiceConfig()` → `normalizeConfig()` → `adaptConfig()` → `parseServiceModel()`.
 
-Both plugins provide `generateStarter()`, which is what `src/commands/init.ts` uses to create starter configs (the `--format` flag selects which plugin's starter to use).
+All built-in definition plugins provide `generateStarter()`, which is what `src/commands/init.ts` uses to create starter configs (the `--format` flag selects which plugin's starter to use).
 
 ### Domain plugins
 
@@ -259,7 +268,7 @@ Properties of the current implementation:
 - `resolve(filePath)` returns the first plugin whose `canLoad(filePath)` matches,
 - registration order therefore defines dispatch priority.
 
-The shared registry is created in `src/definitions/registry.ts` and used by `src/config/loader.ts`. The cloudformation plugin is registered first (more specific detection), followed by the yamlcdk plugin (catch-all for `.yml`/`.yaml`).
+The shared registry is created in `src/definitions/registry.ts` and used by `src/config/loader.ts`. Current registration order is cloudformation (most specific), then serverless, then yamlcdk (catch-all for `.yml`/`.yaml`).
 
 ### `PluginRegistry`
 
@@ -280,7 +289,7 @@ The first stage happens before `ServiceStack` exists; the remaining stages are e
 
 | Stage | Primary code | What happens |
 | --- | --- | --- |
-| `load` | `src/config/loader.ts`, `src/definitions/registry.ts`, `src/definitions/yamlcdk/plugin.ts`, `src/definitions/cloudformation/plugin.ts`, `src/config/schema.ts`, `src/config/normalize.ts`, `src/runtime/aws.ts` | The file is dispatched to the matching definition plugin via `DefinitionRegistry`, parsed and adapted into the canonical `ServiceModel`, and CLI AWS overrides are applied and re-validated. |
+| `load` | `src/config/loader.ts`, `src/definitions/registry.ts`, `src/definitions/yamlcdk/plugin.ts`, `src/definitions/serverless/plugin.ts`, `src/definitions/cloudformation/plugin.ts`, `src/definitions/variables/resolve.ts`, `src/config/schema.ts`, `src/config/normalize.ts`, `src/runtime/aws.ts` | The file is dispatched to the matching definition plugin via `DefinitionRegistry`, variables are resolved, and the result is adapted into the canonical `ServiceModel` before CLI AWS overrides are applied and re-validated. |
 | `validate` | `ServiceStack` phase 1 + `domain.validate?.(ctx)` | Domains reject invalid or inconsistent state before construct creation. |
 | `synthesize` | `ServiceStack` phase 2 + `domain.synthesize?.(ctx)` | Domains create CDK constructs, write them into `ctx.refs`, and optionally return `EventBinding[]`. |
 | `bind` | `ServiceStack` phase 3 + `domain.bind?.(ctx, allEvents)` | Domains wire event sources and APIs to already-created resources using the aggregated bindings. |
@@ -299,10 +308,10 @@ The load stage has multiple sub-steps. For the **yamlcdk format**:
    - `provider.region` defaulting from config, `AWS_REGION`, or `"us-east-1"`
    - `stackName` defaulting to a sanitized `<service>-<stage>` form
    - empty objects for `functions`, `storage`, `messaging`, and `iam`
-3. `adaptConfig()` in `src/definitions/yamlcdk/plugin.ts` converts `NormalizedServiceConfig` into the canonical `ServiceModel`.
-4. `adaptDomainConfigs()` writes native domain slices into `DomainConfigs`.
-5. `loadModel()` returns the parsed model.
-6. CLI commands that accept AWS flags call `resolveModelOverrides()` and `assertModelResolution()` from `src/runtime/aws.ts`.
+4. `adaptConfig()` in `src/definitions/yamlcdk/plugin.ts` converts `NormalizedServiceConfig` into the canonical `ServiceModel`.
+5. `adaptDomainConfigs()` writes native domain slices into `DomainConfigs`.
+6. `loadModel()` returns the parsed model.
+7. CLI commands that accept AWS flags call `resolveModelOverrides()` and `assertModelResolution()` from `src/runtime/aws.ts`.
 
 For the **CloudFormation format**, the load stage differs:
 
@@ -311,6 +320,15 @@ For the **CloudFormation format**, the load stage differs:
 3. Service-level config (service name, stage, region, tags, deployment) is read from the `Metadata.yamlcdk` section.
 4. `loadModel()` returns the parsed model.
 5. CLI override resolution proceeds as above.
+
+For the **Serverless format**, the load stage differs again:
+
+1. `parseCfnYaml()` parses `serverless.yml`/`serverless.yaml`.
+2. `resolveServerlessVariables()` delegates to `resolveDefinitionVariables()` to resolve supported `${...}` expressions (including `opt`, `env`, and `file(...)` patterns).
+3. `adaptServerlessConfig()` maps supported top-level Serverless config and events into `ServiceModel`.
+4. If `resources.Resources`/`resources.Outputs` are present, they are adapted through `adaptCfnTemplate()` and merged with the top-level Serverless adaptation.
+5. `loadModel()` returns the parsed model.
+6. CLI override resolution proceeds as above.
 
 ### Validate stage
 
@@ -517,7 +535,7 @@ This is how the existing native domains work.
 
 #### Extend or add a definition plugin
 
-Two built-in definition plugins exist today: `yamlcdkDefinitionPlugin` and `cloudformationDefinitionPlugin`. Each can evolve independently to:
+Three built-in definition plugins exist today: `cloudformationDefinitionPlugin`, `serverlessDefinitionPlugin`, and `yamlcdkDefinitionPlugin`. Each can evolve independently to:
 
 - adapt more format-specific input into `ServiceModel`,
 - populate additional `DomainConfigs`,
@@ -574,11 +592,17 @@ src/
 │   ├── yamlcdk/
 │   │   ├── plugin.ts               # yamlcdkDefinitionPlugin + adaptConfig()
 │   │   └── index.ts                # Re-exports
-│   └── cloudformation/
-│       ├── cfn-yaml.ts             # Custom js-yaml schema for CF intrinsic functions
-│       ├── adapt.ts                # CF template -> ServiceModel adaptation
-│       ├── plugin.ts               # cloudformationDefinitionPlugin
-│       └── index.ts                # Re-exports
+│   ├── serverless/
+│   │   ├── adapt.ts                # Serverless YAML -> ServiceModel adaptation
+│   │   ├── plugin.ts               # serverlessDefinitionPlugin
+│   │   └── index.ts                # Re-exports
+│   ├── cloudformation/
+│   │   ├── cfn-yaml.ts             # Custom js-yaml schema for CF intrinsic functions
+│   │   ├── adapt.ts                # CF template -> ServiceModel adaptation
+│   │   ├── plugin.ts               # cloudformationDefinitionPlugin
+│   │   └── index.ts                # Re-exports
+│   └── variables/
+│       └── resolve.ts              # Definition variable resolution (`opt`, `env`, `file`, ...)
 ├── compiler/
 │   ├── model.ts                    # Canonical ServiceModel and event/function schemas
 │   ├── stack-builder.ts            # buildApp() + ServiceStack lifecycle orchestration

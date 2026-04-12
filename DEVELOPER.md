@@ -53,7 +53,7 @@ If you want to exercise deploy/diff/remove flows against AWS, make sure you also
 ## Repository layout
 
 - `README.md` - end-user install/usage docs
-- `examples/` - example configs; `examples/service.yml` is the canonical yamlcdk sample, `examples/cloudformation.yml` is the canonical CloudFormation sample
+- `examples/` - example configs; `examples/service.yml` (yamlcdk), `examples/serverless.yml` (Serverless), and `examples/cloudformation.yml` (CloudFormation) are the canonical samples
 - `src/cli.ts` - Commander-based CLI entrypoint
 - `src/commands/` - thin command handlers (`init`, `validate`, `synth`, `bootstrap`, `diff`, `deploy`, `remove`)
 - `src/config/`
@@ -64,10 +64,12 @@ If you want to exercise deploy/diff/remove flows against AWS, make sure you also
 - `src/definitions/`
   - `registry.ts` - shared `DefinitionRegistry` setup (registers all built-in plugins)
   - `yamlcdk/` - native `yamlcdk.yml` definition plugin and starter template
+  - `serverless/` - Serverless Framework YAML definition plugin and adaptation
   - `cloudformation/` - CloudFormation YAML definition plugin
     - `cfn-yaml.ts` - custom js-yaml schema for intrinsic functions (`!Ref`, `!GetAtt`, `!Sub`, `!Join`, etc.)
     - `adapt.ts` - CloudFormation template → `ServiceModel` adaptation
     - `plugin.ts` - `cloudformationDefinitionPlugin` implementation
+  - `variables/resolve.ts` - shared `${...}` variable resolution for all definition formats
 - `src/compiler/`
   - `model.ts` - canonical `ServiceModel` and event/build/provider schemas
   - `stack-builder.ts` - compiler lifecycle orchestration
@@ -80,7 +82,7 @@ If you want to exercise deploy/diff/remove flows against AWS, make sure you also
   - `cdk.ts` - synth/diff/bootstrap/deploy/destroy runtime wrappers
 - `src/**/__tests__/` - source-adjacent Vitest suites (`*.test.ts`)
 - `src/compiler/domains/__e2e__/` - one CDK-asserted end-to-end suite per compiler domain
-- `src/definitions/**/__e2e__/` - format-level end-to-end suites that load real yamlcdk and CloudFormation input through the definition registry before building the stack
+- `src/definitions/**/__e2e__/` - format-level end-to-end suites that load real yamlcdk, Serverless, and CloudFormation input through the definition registry before building the stack
   - organize these by definition section (`provider`, `functions`, `storage`, `messaging`, `events`, `iam`, `invalid`) and cover valid permutations plus invalid definitions
 - `dist/` - compiled output from `npm run build`; do not edit by hand
 
@@ -88,6 +90,7 @@ If you want to exercise deploy/diff/remove flows against AWS, make sure you also
 
 1. Start from the user-facing behavior you want to change:
    - config/YAML change -> start in `src/config/` and `src/definitions/yamlcdk/`
+   - Serverless format change -> start in `src/definitions/serverless/`
    - CloudFormation format change -> start in `src/definitions/cloudformation/`
    - compiler/domain change -> start in `src/compiler/`
    - CLI flag/command change -> start in `src/cli.ts` and `src/commands/`
@@ -103,7 +106,7 @@ If you want to exercise deploy/diff/remove flows against AWS, make sure you also
    ```
 
 7. Smoke-test the relevant command with `npm run dev -- ...`.
-8. If the change affects end users, update `README.md`, `examples/service.yml`, and the `init` starter template if needed.
+8. If the change affects end users, update `README.md`, the relevant example file(s) under `examples/`, and the matching `init` starter template(s).
 
 ## Schema-first development with Zod
 
@@ -206,6 +209,7 @@ Key files:
 - registry types: `src/compiler/plugins/registry.ts`
 - shared registry setup: `src/definitions/registry.ts`
 - yamlcdk implementation: `src/definitions/yamlcdk/plugin.ts`
+- Serverless implementation: `src/definitions/serverless/plugin.ts`
 - CloudFormation implementation: `src/definitions/cloudformation/plugin.ts`
 - loader dispatch: `src/config/loader.ts`
 
@@ -213,12 +217,13 @@ Key files:
 
 The **plugin contract, registries, and loader dispatch are all wired**. `loadModel()` resolves the correct definition plugin through the shared `DefinitionRegistry` in `src/definitions/registry.ts`. `runInit()` selects a plugin's `generateStarter()` based on the `--format` flag.
 
-Two built-in plugins exist:
+Three built-in plugins exist:
 
-- **`yamlcdkDefinitionPlugin`** — catch-all for `.yml`/`.yaml` files in the native yamlcdk format.
 - **`cloudformationDefinitionPlugin`** — matches CloudFormation templates by detecting `AWSTemplateFormatVersion` or `Resources` with `Type: AWS::*` in the first 4KB of the file.
+- **`serverlessDefinitionPlugin`** — matches AWS Serverless configs (`serverless.yml`/`serverless.yaml`) and adapts the supported subset into the canonical model.
+- **`yamlcdkDefinitionPlugin`** — catch-all for remaining `.yml`/`.yaml` files in the native yamlcdk format.
 
-The cloudformation plugin is registered first (more specific detection), so it takes precedence when both could match.
+Registration order is currently cloudformation, then serverless, then yamlcdk, so more specific formats resolve before the catch-all.
 
 ### Safe process
 
@@ -321,15 +326,25 @@ What the current suites cover:
   - normalized config to `ServiceModel` adaptation
 - `src/definitions/yamlcdk/__e2e__/yamlcdk.test.ts`
   - yamlcdk input format resolution, loading, and stack creation through the definition registry
+- `src/definitions/serverless/__tests__/plugin.test.ts`
+  - Serverless detection and adaptation behavior
+- `src/definitions/serverless/__e2e__/serverless.test.ts`
+  - Serverless input format resolution, loading, and stack creation through the definition registry
 - `src/definitions/cloudformation/__tests__/cloudformation.test.ts`
   - CloudFormation YAML parsing with intrinsic functions
   - intrinsic function type guards
-  - `canLoad()` detection (CloudFormation vs yamlcdk format)
+  - `canLoad()` detection (CloudFormation vs Serverless/yamlcdk formats)
   - definition registry resolution
   - resource extraction (Lambda, S3, DynamoDB, SQS, SNS)
   - event wiring (EventSourceMapping, SNS subscription, S3 notification, EventBridge, API Gateway V2)
 - `src/definitions/cloudformation/__e2e__/cloudformation.test.ts`
   - CloudFormation input format resolution, loading, and stack creation through the definition registry
+- `src/definitions/variables/__tests__/dotenv.test.ts`
+  - `.env` and `.env.<stage>` variable loading/precedence behavior
+- `src/definitions/__e2e__/plugin.test.ts`
+  - definition plugin resolution order across supported formats
+- `src/definitions/__e2e__/config-options.test.ts`
+  - option/variable flow across the definition loading pipeline
 
 Update tests when you change:
 
@@ -362,8 +377,10 @@ Concretely, keep these in sync when relevant:
 
 - `README.md`
 - `examples/service.yml` (yamlcdk format)
+- `examples/serverless.yml` (Serverless format)
 - `examples/cloudformation.yml` (CloudFormation format)
 - `src/definitions/yamlcdk/plugin.ts` yamlcdk starter template
+- `src/definitions/serverless/plugin.ts` Serverless starter template
 - `src/definitions/cloudformation/plugin.ts` CloudFormation starter template
 - `DEVELOPER.md` for contributor workflow/internal architecture changes
 

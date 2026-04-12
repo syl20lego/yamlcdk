@@ -8,7 +8,7 @@ yamlcdk supports three input formats:
 - **Serverless Framework YAML** — `serverless.yml` for AWS, mapped onto yamlcdk's current compiler model (see `examples/serverless.yml`)
 - **CloudFormation YAML** — native CloudFormation templates with `AWSTemplateFormatVersion` (see `examples/cloudformation.yml`)
 
-The correct format is detected automatically based on file content. This README is intentionally for CLI users only. Maintainer and contributor material belongs in [ARCHITECTURE.md](./ARCHITECTURE.md) and [DEVELOPER.md](./DEVELOPER.md), not here.
+The correct format is detected automatically based on file content. This README is focused on CLI users. If you are developing yamlcdk itself, use [DEVELOPER.md](./DEVELOPER.md) (workflow/tests) and [ARCHITECTURE.md](./ARCHITECTURE.md) (internal design).
 
 ## Requirements
 
@@ -18,7 +18,20 @@ The correct format is detected automatically based on file content. This README 
 
 ## Install and run
 
-### From a checkout of this repository
+### Installed CLI (recommended)
+
+```bash
+npx yamlcdk --help
+```
+
+You can also install it in a project:
+
+```bash
+npm i -D yamlcdk
+npx yamlcdk --help
+```
+
+### From a checkout of this repository (maintainer/development flow)
 
 ```bash
 npm install
@@ -30,18 +43,6 @@ During local development you can run the CLI without building first:
 
 ```bash
 npm run dev -- --help
-```
-
-Useful repo scripts:
-
-- `npm run build` - compile the CLI to `dist/`
-- `npm run dev -- <args>` - run the CLI from TypeScript source
-- `npm test` - run the test suite for the local checkout
-
-### When yamlcdk is already installed in a project
-
-```bash
-npx yamlcdk --help
 ```
 
 All examples below use `yamlcdk`. If you are running from a checkout, replace `yamlcdk` with `node dist/cli.js` after `npm run build`, or with `npm run dev --` while developing locally.
@@ -757,4 +758,5 @@ When adapting `examples/service.yml`, choose one supported deployment mode at a 
 - `examples/serverless.yml` - Serverless Framework format config example
 - `examples/cloudformation.yml` - CloudFormation format config example
 - `src/config/schema.ts` - exact yamlcdk config schema
-- [ARCHITECTURE.md](./ARCHITECTURE.md) and [DEVELOPER.md](./DEVELOPER.md) - maintainer and contributor material
+- [DEVELOPER.md](./DEVELOPER.md) - contributor setup, workflow, and test strategy
+- [ARCHITECTURE.md](./ARCHITECTURE.md) - plugin system and compiler/runtime architecture
