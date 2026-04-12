@@ -10,6 +10,30 @@ yamlcdk supports three input formats:
 
 The correct format is detected automatically based on file content. This README is focused on CLI users. If you are developing yamlcdk itself, use [DEVELOPER.md](./DEVELOPER.md) (workflow/tests) and [ARCHITECTURE.md](./ARCHITECTURE.md) (internal design).
 
+## About This Project
+
+### Development & Philosophy
+
+This project is built with AI assistance—primarily GPT Codex 5.3 and Claude Opus 4.6—in places where it makes sense. It's designed to be simple for both AI and human developers to modify and extend. The philosophy, guidelines, and architecture are author-driven; contributions to both features and architecture are welcome.
+
+### Vision & Goals
+
+yamlcdk combines the simplicity of YAML configuration with the power and maturity of AWS CDK, delivering a lightweight integration that follows CDK conventions while keeping infrastructure definitions approachable. The goal is to support YAML-based infrastructure as code while enabling full testing, validation, and CDK integration—bringing both YAML and CDK strengths into a single CLI.
+
+### Format Support & Maturity
+
+yamlcdk supports three input formats with different maturity levels:
+
+- **yamlcdk format** — The primary, fully-featured format with complete support for all features. Recommended for new projects.
+- **CloudFormation YAML** — Native CloudFormation templates are supported with limited scope today, but support will grow as more features are added.
+- **Serverless Framework YAML** — Basic compatibility is provided for Serverless configs mapped onto yamlcdk's compiler model. Some plugins are supported natively, but there is no goal to support all plugins. Current support is best-effort for common use cases.
+
+All three formats maintain backward compatibility as the CLI evolves and new features are added.
+
+### Roadmap & Contributions
+
+yamlcdk is currently in the alpha phase. Plugin support is not extensively planned for the alpha phase, but once alpha is complete, we will have a better understanding of the architecture and plugin strategy going forward. Contributions are welcome for features, architecture improvements, documentation, and examples.
+
 ## Requirements
 
 - Node.js 20+
