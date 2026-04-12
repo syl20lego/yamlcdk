@@ -590,4 +590,178 @@ Resources:
       ).toThrow("does not support yet");
     });
   });
+
+  describe("CloudFront resources", () => {
+    test("creates a CachePolicy from AWS::CloudFront::CachePolicy resource", () => {
+      const { model, template } = buildDefinitionFromYaml(`
+AWSTemplateFormatVersion: "2010-09-09"
+Metadata:
+  yamlcdk:
+    service: cf-cache-policy
+Resources:
+  ApiCachePolicy:
+    Type: AWS::CloudFront::CachePolicy
+    Properties:
+      CachePolicyConfig:
+        Name: api-cache-policy
+        DefaultTTL: 0
+        MinTTL: 0
+        MaxTTL: 31536000
+        ParametersInCacheKeyAndForwardedToOrigin:
+          HeadersConfig:
+            HeaderBehavior: none
+          CookiesConfig:
+            CookieBehavior: none
+          QueryStringsConfig:
+            QueryStringBehavior: all
+          EnableAcceptEncodingGzip: true
+`);
+
+      expect(model.domainConfigs.get({ id: "cloudfront" } as never)).toBeDefined();
+      template.resourceCountIs("AWS::CloudFront::CachePolicy", 1);
+      template.hasResourceProperties(
+        "AWS::CloudFront::CachePolicy",
+        Match.objectLike({
+          CachePolicyConfig: Match.objectLike({
+            DefaultTTL: 0,
+          }),
+        }),
+      );
+    });
+
+    test("creates an OriginRequestPolicy from AWS::CloudFront::OriginRequestPolicy resource", () => {
+      const { template } = buildDefinitionFromYaml(`
+AWSTemplateFormatVersion: "2010-09-09"
+Metadata:
+  yamlcdk:
+    service: cf-origin-request-policy
+Resources:
+  AllViewerPolicy:
+    Type: AWS::CloudFront::OriginRequestPolicy
+    Properties:
+      OriginRequestPolicyConfig:
+        Name: all-viewer
+        HeadersConfig:
+          HeaderBehavior: allViewer
+        CookiesConfig:
+          CookieBehavior: none
+        QueryStringsConfig:
+          QueryStringBehavior: none
+`);
+
+      template.resourceCountIs("AWS::CloudFront::OriginRequestPolicy", 1);
+    });
+
+    test("creates a Distribution referencing a CachePolicy via !Ref", () => {
+      const { template } = buildDefinitionFromYaml(`
+AWSTemplateFormatVersion: "2010-09-09"
+Metadata:
+  yamlcdk:
+    service: cf-distribution
+Resources:
+  ApiCachePolicy:
+    Type: AWS::CloudFront::CachePolicy
+    Properties:
+      CachePolicyConfig:
+        Name: api-cache-policy
+        DefaultTTL: 0
+        MinTTL: 0
+        MaxTTL: 31536000
+        ParametersInCacheKeyAndForwardedToOrigin:
+          HeadersConfig:
+            HeaderBehavior: none
+          CookiesConfig:
+            CookieBehavior: none
+          QueryStringsConfig:
+            QueryStringBehavior: none
+          EnableAcceptEncodingGzip: true
+  ApiDistribution:
+    Type: AWS::CloudFront::Distribution
+    Properties:
+      DistributionConfig:
+        Origins:
+          - Id: apiOrigin
+            DomainName: xyz.execute-api.us-east-1.amazonaws.com
+            CustomOriginConfig:
+              HTTPSPort: 443
+              OriginProtocolPolicy: https-only
+        DefaultCacheBehavior:
+          TargetOriginId: apiOrigin
+          ViewerProtocolPolicy: redirect-to-https
+          CachePolicyId: !Ref ApiCachePolicy
+        Enabled: true
+`);
+
+      template.resourceCountIs("AWS::CloudFront::CachePolicy", 1);
+      template.resourceCountIs("AWS::CloudFront::Distribution", 1);
+      template.hasOutput("DistributionApiDistributionDomainName", {});
+    });
+
+    test("creates a Distribution with OriginRequestPolicy referenced via !Ref", () => {
+      const { template } = buildDefinitionFromYaml(`
+AWSTemplateFormatVersion: "2010-09-09"
+Metadata:
+  yamlcdk:
+    service: cf-origin-request
+Resources:
+  AllViewerPolicy:
+    Type: AWS::CloudFront::OriginRequestPolicy
+    Properties:
+      OriginRequestPolicyConfig:
+        Name: all-viewer
+        HeadersConfig:
+          HeaderBehavior: allViewer
+        CookiesConfig:
+          CookieBehavior: none
+        QueryStringsConfig:
+          QueryStringBehavior: none
+  WebDistribution:
+    Type: AWS::CloudFront::Distribution
+    Properties:
+      DistributionConfig:
+        Origins:
+          - Id: webOrigin
+            DomainName: example.com
+            CustomOriginConfig:
+              HTTPSPort: 443
+              OriginProtocolPolicy: https-only
+        DefaultCacheBehavior:
+          TargetOriginId: webOrigin
+          ViewerProtocolPolicy: redirect-to-https
+          OriginRequestPolicyId: !Ref AllViewerPolicy
+        Enabled: true
+`);
+
+      template.resourceCountIs("AWS::CloudFront::OriginRequestPolicy", 1);
+      template.resourceCountIs("AWS::CloudFront::Distribution", 1);
+    });
+
+    test("creates a Distribution with additional cache behaviors", () => {
+      const { template } = buildDefinitionFromYaml(`
+AWSTemplateFormatVersion: "2010-09-09"
+Metadata:
+  yamlcdk:
+    service: cf-additional-behaviors
+Resources:
+  WebDistribution:
+    Type: AWS::CloudFront::Distribution
+    Properties:
+      DistributionConfig:
+        Origins:
+          - Id: webOrigin
+            DomainName: example.com
+        DefaultCacheBehavior:
+          TargetOriginId: webOrigin
+          ViewerProtocolPolicy: redirect-to-https
+        CacheBehaviors:
+          - PathPattern: /api/*
+            TargetOriginId: webOrigin
+            ViewerProtocolPolicy: redirect-to-https
+            Compress: true
+        Enabled: true
+`);
+
+      template.resourceCountIs("AWS::CloudFront::Distribution", 1);
+    });
+  });
 });

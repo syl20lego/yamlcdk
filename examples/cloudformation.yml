@@ -139,3 +139,52 @@ Resources:
       ApiId: !Ref HttpApi
       RouteKey: "GET /hello"
       Target: !Join ["/", ["integrations", !Ref HelloIntegration]]
+
+  # ─── CloudFront ────────────────────────────────────────────
+
+  ApiCachePolicy:
+    Type: AWS::CloudFront::CachePolicy
+    Properties:
+      CachePolicyConfig:
+        Name: demo-api-cache-policy
+        DefaultTTL: 0
+        MinTTL: 0
+        MaxTTL: 31536000
+        ParametersInCacheKeyAndForwardedToOrigin:
+          HeadersConfig:
+            HeaderBehavior: none
+          CookiesConfig:
+            CookieBehavior: none
+          QueryStringsConfig:
+            QueryStringBehavior: all
+          EnableAcceptEncodingGzip: true
+
+  AllViewerPolicy:
+    Type: AWS::CloudFront::OriginRequestPolicy
+    Properties:
+      OriginRequestPolicyConfig:
+        Name: demo-api-all-viewer
+        HeadersConfig:
+          HeaderBehavior: allViewer
+        CookiesConfig:
+          CookieBehavior: none
+        QueryStringsConfig:
+          QueryStringBehavior: all
+
+  ApiDistribution:
+    Type: AWS::CloudFront::Distribution
+    Properties:
+      DistributionConfig:
+        Origins:
+          - Id: apiOrigin
+            DomainName: xyz.execute-api.us-east-1.amazonaws.com
+            CustomOriginConfig:
+              HTTPSPort: 443
+              OriginProtocolPolicy: https-only
+        DefaultCacheBehavior:
+          TargetOriginId: apiOrigin
+          ViewerProtocolPolicy: redirect-to-https
+          CachePolicyId: !Ref ApiCachePolicy
+          OriginRequestPolicyId: !Ref AllViewerPolicy
+        Enabled: true
+

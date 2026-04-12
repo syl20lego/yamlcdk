@@ -78,3 +78,34 @@ iam:
         - dynamodb:Query
       resources:
         - users
+
+cdn:
+  cachePolicies:
+    apiCache:
+      comment: Cache for API endpoints
+      defaultTtl: 0
+      minTtl: 0
+      maxTtl: 31536000
+      queryStringsConfig:
+        behavior: all
+  originRequestPolicies:
+    allViewer:
+      headersConfig:
+        behavior: allViewer
+      cookiesConfig:
+        behavior: none
+      queryStringsConfig:
+        behavior: all
+  distributions:
+    api:
+      comment: API CDN distribution
+      origins:
+        - id: apiOrigin
+          domainName: xyz.execute-api.us-east-1.amazonaws.com
+          httpsPort: 443
+          originProtocolPolicy: https-only
+      defaultBehavior:
+        targetOriginId: apiOrigin
+        viewerProtocolPolicy: redirect-to-https
+        cachePolicyId: apiCache
+        originRequestPolicyId: allViewer

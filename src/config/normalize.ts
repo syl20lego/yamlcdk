@@ -35,6 +35,11 @@ export function normalizeConfig(raw: RawServiceConfig): NormalizedServiceConfig 
     iam: {
       statements: raw.iam?.statements ?? {},
     },
+    cdn: {
+      cachePolicies: raw.cdn?.cachePolicies ?? {},
+      originRequestPolicies: raw.cdn?.originRequestPolicies ?? {},
+      distributions: raw.cdn?.distributions ?? {},
+    },
     stackName,
   });
 }

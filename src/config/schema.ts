@@ -8,7 +8,10 @@ import { iamStatementSchema as sharedIamStatementSchema } from "../schema/iam.js
 import { buildConfigSchema } from "../schema/build.js";
 import { deploymentConfigSchema } from "../schema/deployment.js";
 import {
+  cachePolicySchema,
+  distributionSchema,
   dynamodbTableSchema,
+  originRequestPolicySchema,
   s3BucketSchema,
   snsTopicSchema,
   sqsQueueSchema,
@@ -159,6 +162,13 @@ export const serviceConfigSchema = z.object({
       statements: z.record(z.string(), iamStatementSchema).optional(),
     })
     .optional(),
+  cdn: z
+    .object({
+      cachePolicies: z.record(z.string(), cachePolicySchema).optional(),
+      originRequestPolicies: z.record(z.string(), originRequestPolicySchema).optional(),
+      distributions: z.record(z.string(), distributionSchema).optional(),
+    })
+    .optional(),
 });
 
 export const normalizedServiceConfigSchema = z.object({
@@ -203,6 +213,11 @@ export const normalizedServiceConfigSchema = z.object({
   }),
   iam: z.object({
     statements: z.record(z.string(), iamStatementSchema),
+  }),
+  cdn: z.object({
+    cachePolicies: z.record(z.string(), cachePolicySchema),
+    originRequestPolicies: z.record(z.string(), originRequestPolicySchema),
+    distributions: z.record(z.string(), distributionSchema),
   }),
   stackName: z.string().min(1),
 });

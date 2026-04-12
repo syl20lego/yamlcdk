@@ -94,8 +94,8 @@ describe("PluginRegistry", () => {
 });
 
 describe("native domains", () => {
-  test("all 7 native domains are declared", () => {
-    expect(nativeDomains).toHaveLength(7);
+  test("all 8 native domains are declared", () => {
+    expect(nativeDomains).toHaveLength(8);
 
     const names = nativeDomains.map((domain) => domain.name);
     expect(names).toContain("s3");
@@ -105,14 +105,16 @@ describe("native domains", () => {
     expect(names).toContain("functions");
     expect(names).toContain("eventbridge");
     expect(names).toContain("apis");
+    expect(names).toContain("cloudfront");
   });
 
   test("createNativeDomainRegistry registers all domains", () => {
     const registry = createNativeDomainRegistry();
 
-    expect(registry.all()).toHaveLength(7);
+    expect(registry.all()).toHaveLength(8);
     expect(registry.get("s3")).toBeDefined();
     expect(registry.get("functions")).toBeDefined();
+    expect(registry.get("cloudfront")).toBeDefined();
   });
 
   test("lifecycle order: resource domains before functions before binding domains", () => {

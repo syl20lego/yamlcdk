@@ -22,6 +22,7 @@ import {
   SQS_CONFIG,
   SNS_CONFIG,
   APIS_CONFIG,
+  CLOUDFRONT_CONFIG,
 } from "../../compiler/plugins/native-domain-configs.js";
 import type {
   S3BucketConfig,
@@ -29,6 +30,9 @@ import type {
   SQSQueueConfig,
   SNSTopicConfig,
   SNSSubscriptionConfig,
+  CloudFrontCachePolicyConfig,
+  CloudFrontOriginRequestPolicyConfig,
+  CloudFrontDistributionConfig,
 } from "../../compiler/plugins/native-domain-configs.js";
 import {
   createDynamodbStreamEvent,
@@ -621,6 +625,300 @@ function wireFunctionUrls(
   }
 }
 
+// ─── CloudFront extractors ───────────────────────────────────
+
+function extractCachePolicies(
+  resources: Record<string, CfnResource>,
+): Record<string, CloudFrontCachePolicyConfig> {
+  const policies: Record<string, CloudFrontCachePolicyConfig> = {};
+
+  for (const [logicalId, resource] of getResourcesByType(
+    resources,
+    "AWS::CloudFront::CachePolicy",
+  )) {
+    const p = props(resource);
+    const cfg = (p.CachePolicyConfig as Record<string, unknown> | undefined) ?? {};
+
+    const headersRaw = cfg.ParametersInCacheKeyAndForwardedToOrigin as
+      | Record<string, unknown>
+      | undefined;
+    const headersConfig = headersRaw
+      ? (headersRaw.HeadersConfig as Record<string, unknown> | undefined)
+      : undefined;
+    const cookiesConfig = headersRaw
+      ? (headersRaw.CookiesConfig as Record<string, unknown> | undefined)
+      : undefined;
+    const queryStringsConfig = headersRaw
+      ? (headersRaw.QueryStringsConfig as Record<string, unknown> | undefined)
+      : undefined;
+
+    const toStringArray = (v: unknown): string[] | undefined =>
+      Array.isArray(v) && v.every((x) => typeof x === "string")
+        ? (v as string[])
+        : undefined;
+
+    policies[logicalId] = {
+      comment: typeof cfg.Comment === "string" ? cfg.Comment : undefined,
+      defaultTtl: typeof cfg.DefaultTTL === "number" ? cfg.DefaultTTL : undefined,
+      minTtl: typeof cfg.MinTTL === "number" ? cfg.MinTTL : undefined,
+      maxTtl: typeof cfg.MaxTTL === "number" ? cfg.MaxTTL : undefined,
+      headersConfig: headersConfig
+        ? {
+            behavior: (headersConfig.HeaderBehavior as "none" | "whitelist") ?? "none",
+            headers: toStringArray(
+              (headersConfig.Headers as { Items?: unknown } | undefined)?.Items,
+            ),
+          }
+        : undefined,
+      cookiesConfig: cookiesConfig
+        ? {
+            behavior:
+              (cookiesConfig.CookieBehavior as
+                | "none"
+                | "all"
+                | "whitelist"
+                | "allExcept") ?? "none",
+            cookies: toStringArray(
+              (cookiesConfig.Cookies as { Items?: unknown } | undefined)?.Items,
+            ),
+          }
+        : undefined,
+      queryStringsConfig: queryStringsConfig
+        ? {
+            behavior:
+              (queryStringsConfig.QueryStringBehavior as
+                | "none"
+                | "all"
+                | "whitelist"
+                | "allExcept") ?? "none",
+            queryStrings: toStringArray(
+              (queryStringsConfig.QueryStrings as
+                | { Items?: unknown }
+                | undefined)?.Items,
+            ),
+          }
+        : undefined,
+      enableGzip:
+        typeof headersRaw?.EnableAcceptEncodingGzip === "boolean"
+          ? headersRaw.EnableAcceptEncodingGzip
+          : undefined,
+      enableBrotli:
+        typeof headersRaw?.EnableAcceptEncodingBrotli === "boolean"
+          ? headersRaw.EnableAcceptEncodingBrotli
+          : undefined,
+    };
+  }
+
+  return policies;
+}
+
+function extractOriginRequestPolicies(
+  resources: Record<string, CfnResource>,
+): Record<string, CloudFrontOriginRequestPolicyConfig> {
+  const policies: Record<string, CloudFrontOriginRequestPolicyConfig> = {};
+
+  for (const [logicalId, resource] of getResourcesByType(
+    resources,
+    "AWS::CloudFront::OriginRequestPolicy",
+  )) {
+    const p = props(resource);
+    const cfg =
+      (p.OriginRequestPolicyConfig as Record<string, unknown> | undefined) ?? {};
+
+    const toStringArray = (v: unknown): string[] | undefined =>
+      Array.isArray(v) && v.every((x) => typeof x === "string")
+        ? (v as string[])
+        : undefined;
+
+    const headersConfig = cfg.HeadersConfig as
+      | Record<string, unknown>
+      | undefined;
+    const cookiesConfig = cfg.CookiesConfig as
+      | Record<string, unknown>
+      | undefined;
+    const queryStringsConfig = cfg.QueryStringsConfig as
+      | Record<string, unknown>
+      | undefined;
+
+    policies[logicalId] = {
+      comment: typeof cfg.Comment === "string" ? cfg.Comment : undefined,
+      headersConfig: headersConfig
+        ? {
+            behavior:
+              (headersConfig.HeaderBehavior as
+                | "none"
+                | "allViewer"
+                | "whitelist"
+                | "allViewerAndWhitelistCloudFront") ?? "none",
+            headers: toStringArray(
+              (headersConfig.Headers as { Items?: unknown } | undefined)?.Items,
+            ),
+          }
+        : undefined,
+      cookiesConfig: cookiesConfig
+        ? {
+            behavior:
+              (cookiesConfig.CookieBehavior as
+                | "none"
+                | "all"
+                | "whitelist"
+                | "allExcept") ?? "none",
+            cookies: toStringArray(
+              (cookiesConfig.Cookies as { Items?: unknown } | undefined)?.Items,
+            ),
+          }
+        : undefined,
+      queryStringsConfig: queryStringsConfig
+        ? {
+            behavior:
+              (queryStringsConfig.QueryStringBehavior as
+                | "none"
+                | "all"
+                | "whitelist") ?? "none",
+            queryStrings: toStringArray(
+              (queryStringsConfig.QueryStrings as
+                | { Items?: unknown }
+                | undefined)?.Items,
+            ),
+          }
+        : undefined,
+    };
+  }
+
+  return policies;
+}
+
+function extractDistributions(
+  resources: Record<string, CfnResource>,
+  resourceTypes: Map<string, string>,
+): Record<string, CloudFrontDistributionConfig> {
+  const distributions: Record<string, CloudFrontDistributionConfig> = {};
+
+  for (const [logicalId, resource] of getResourcesByType(
+    resources,
+    "AWS::CloudFront::Distribution",
+  )) {
+    const p = props(resource);
+    const cfg =
+      (p.DistributionConfig as Record<string, unknown> | undefined) ?? {};
+
+    const rawOrigins = (cfg.Origins as Array<Record<string, unknown>>) ?? [];
+    const origins: CloudFrontDistributionConfig["origins"] = rawOrigins.map(
+      (o) => {
+        const customOriginConfig = o.CustomOriginConfig as
+          | Record<string, unknown>
+          | undefined;
+        return {
+          id: String(o.Id ?? ""),
+          domainName: String(o.DomainName ?? ""),
+          httpPort:
+            typeof customOriginConfig?.HTTPPort === "number"
+              ? customOriginConfig.HTTPPort
+              : undefined,
+          httpsPort:
+            typeof customOriginConfig?.HTTPSPort === "number"
+              ? customOriginConfig.HTTPSPort
+              : undefined,
+          originProtocolPolicy: customOriginConfig?.OriginProtocolPolicy
+            ? (String(customOriginConfig.OriginProtocolPolicy).toLowerCase() as
+                | "http-only"
+                | "https-only"
+                | "match-viewer")
+            : undefined,
+        };
+      },
+    );
+
+    const resolvePolicyId = (value: unknown): string | undefined => {
+      if (value === undefined || value === null) return undefined;
+      const logicalRef = resolveLogicalId(value);
+      if (logicalRef) {
+        const type = resourceTypes.get(logicalRef);
+        if (
+          type === "AWS::CloudFront::CachePolicy" ||
+          type === "AWS::CloudFront::OriginRequestPolicy"
+        ) {
+          return logicalRef;
+        }
+      }
+      if (typeof value === "string") return value;
+      return undefined;
+    };
+
+    const adaptBehavior = (
+      b: Record<string, unknown>,
+    ): CloudFrontDistributionConfig["defaultBehavior"] => {
+      const rawMethods = (b.AllowedMethods as string[] | undefined) ?? [];
+      return {
+        targetOriginId: String(b.TargetOriginId ?? ""),
+        viewerProtocolPolicy: (
+          String(b.ViewerProtocolPolicy ?? "redirect-to-https")
+            .toLowerCase()
+            .replace(/-/g, "-") as
+            | "https-only"
+            | "redirect-to-https"
+            | "allow-all"
+        ),
+        cachePolicyId: resolvePolicyId(b.CachePolicyId),
+        originRequestPolicyId: resolvePolicyId(b.OriginRequestPolicyId),
+        allowedMethods: rawMethods.length > 0 ? rawMethods : undefined,
+        compress:
+          typeof b.Compress === "boolean" ? b.Compress : undefined,
+      };
+    };
+
+    const rawDefaultBehavior =
+      (cfg.DefaultCacheBehavior as Record<string, unknown> | undefined) ?? {};
+    const rawAdditionalBehaviors =
+      (cfg.CacheBehaviors as Array<Record<string, unknown>>) ?? [];
+
+    const viewerCertificate = cfg.ViewerCertificate as
+      | Record<string, unknown>
+      | undefined;
+    const certificateArn =
+      typeof viewerCertificate?.AcmCertificateArn === "string"
+        ? viewerCertificate.AcmCertificateArn
+        : undefined;
+
+    const rawDomainNames = (cfg.Aliases as string[] | undefined) ?? [];
+
+    distributions[logicalId] = {
+      comment:
+        typeof cfg.Comment === "string" ? cfg.Comment : undefined,
+      enabled:
+        typeof cfg.Enabled === "boolean" ? cfg.Enabled : undefined,
+      priceClass: cfg.PriceClass
+        ? (String(cfg.PriceClass) as
+            | "PriceClass_All"
+            | "PriceClass_200"
+            | "PriceClass_100")
+        : undefined,
+      httpVersion: cfg.HttpVersion
+        ? (String(cfg.HttpVersion) as
+            | "http1.1"
+            | "http2"
+            | "http2and3"
+            | "http3")
+        : undefined,
+      origins,
+      defaultBehavior: adaptBehavior(rawDefaultBehavior),
+      additionalBehaviors:
+        rawAdditionalBehaviors.length > 0
+          ? rawAdditionalBehaviors.map((b) => ({
+              ...adaptBehavior(b),
+              pathPattern: String(b.PathPattern ?? ""),
+            }))
+          : undefined,
+      domainNames: rawDomainNames.length > 0 ? rawDomainNames : undefined,
+      certificateArn,
+      webAclId:
+        typeof cfg.WebACLId === "string" ? cfg.WebACLId : undefined,
+    };
+  }
+
+  return distributions;
+}
+
 // ─── Main adaptation ────────────────────────────────────────
 
 function sanitizeName(input: string): string {
@@ -659,6 +957,9 @@ export function adaptCfnTemplate(
     resourceTypes,
   );
   const topics = extractSNSTopics(allResources, snsSubscriptions);
+  const cachePolicies = extractCachePolicies(allResources);
+  const originRequestPolicies = extractOriginRequestPolicies(allResources);
+  const distributions = extractDistributions(allResources, resourceTypes);
 
   // Wire events to functions
   wireEventSourceMappings(allResources, functions, resourceTypes);
@@ -682,6 +983,11 @@ export function adaptCfnTemplate(
     restApi: meta.restApi?.cloudWatchRoleArn
       ? { cloudWatchRoleArn: meta.restApi.cloudWatchRoleArn }
       : undefined,
+  });
+  dc.set(CLOUDFRONT_CONFIG, {
+    cachePolicies,
+    originRequestPolicies,
+    distributions,
   });
 
   return parseServiceModel({

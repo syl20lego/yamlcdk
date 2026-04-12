@@ -165,4 +165,117 @@ functions:
     expect(stack.synthesizer.constructor.name).toBe("DefaultStackSynthesizer");
     expect(Object.keys(rules)).toHaveLength(0);
   });
+
+  describe("CloudFront resources (under resources.Resources)", () => {
+    test("creates a CachePolicy from AWS::CloudFront::CachePolicy in resources", () => {
+      const { template } = buildDefinitionFromYaml(
+        `
+service: demo
+provider:
+  name: aws
+  stage: dev
+  region: us-east-1
+resources:
+  Resources:
+    ApiCachePolicy:
+      Type: AWS::CloudFront::CachePolicy
+      Properties:
+        CachePolicyConfig:
+          Name: api-cache-policy
+          DefaultTTL: 0
+          MinTTL: 0
+          MaxTTL: 31536000
+          ParametersInCacheKeyAndForwardedToOrigin:
+            HeadersConfig:
+              HeaderBehavior: none
+            CookiesConfig:
+              CookieBehavior: none
+            QueryStringsConfig:
+              QueryStringBehavior: all
+            EnableAcceptEncodingGzip: true
+`,
+        "serverless.yml",
+      );
+
+      template.resourceCountIs("AWS::CloudFront::CachePolicy", 1);
+    });
+
+    test("creates an OriginRequestPolicy from AWS::CloudFront::OriginRequestPolicy in resources", () => {
+      const { template } = buildDefinitionFromYaml(
+        `
+service: demo
+provider:
+  name: aws
+  stage: dev
+  region: us-east-1
+resources:
+  Resources:
+    AllViewerPolicy:
+      Type: AWS::CloudFront::OriginRequestPolicy
+      Properties:
+        OriginRequestPolicyConfig:
+          Name: all-viewer
+          HeadersConfig:
+            HeaderBehavior: allViewer
+          CookiesConfig:
+            CookieBehavior: none
+          QueryStringsConfig:
+            QueryStringBehavior: none
+`,
+        "serverless.yml",
+      );
+
+      template.resourceCountIs("AWS::CloudFront::OriginRequestPolicy", 1);
+    });
+
+    test("creates a Distribution referencing a CachePolicy via !Ref in resources", () => {
+      const { template } = buildDefinitionFromYaml(
+        `
+service: demo
+provider:
+  name: aws
+  stage: dev
+  region: us-east-1
+resources:
+  Resources:
+    ApiCachePolicy:
+      Type: AWS::CloudFront::CachePolicy
+      Properties:
+        CachePolicyConfig:
+          Name: api-cache-policy
+          DefaultTTL: 0
+          MinTTL: 0
+          MaxTTL: 31536000
+          ParametersInCacheKeyAndForwardedToOrigin:
+            HeadersConfig:
+              HeaderBehavior: none
+            CookiesConfig:
+              CookieBehavior: none
+            QueryStringsConfig:
+              QueryStringBehavior: none
+            EnableAcceptEncodingGzip: true
+    ApiDistribution:
+      Type: AWS::CloudFront::Distribution
+      Properties:
+        DistributionConfig:
+          Origins:
+            - Id: apiOrigin
+              DomainName: xyz.execute-api.us-east-1.amazonaws.com
+              CustomOriginConfig:
+                HTTPSPort: 443
+                OriginProtocolPolicy: https-only
+          DefaultCacheBehavior:
+            TargetOriginId: apiOrigin
+            ViewerProtocolPolicy: redirect-to-https
+            CachePolicyId: !Ref ApiCachePolicy
+          Enabled: true
+`,
+        "serverless.yml",
+      );
+
+      template.resourceCountIs("AWS::CloudFront::CachePolicy", 1);
+      template.resourceCountIs("AWS::CloudFront::Distribution", 1);
+      template.hasOutput("DistributionApiDistributionDomainName", {});
+    });
+  });
 });

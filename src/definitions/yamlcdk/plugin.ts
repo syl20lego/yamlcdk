@@ -32,6 +32,7 @@ import {
   SQS_CONFIG,
   SNS_CONFIG,
   APIS_CONFIG,
+  CLOUDFRONT_CONFIG,
 } from "../../compiler/plugins/native-domain-configs.js";
 import { loadRawConfig } from "../../config/load.js";
 import { normalizeConfig } from "../../config/normalize.js";
@@ -152,6 +153,12 @@ function adaptDomainConfigs(config: NormalizedServiceConfig): DomainConfigs {
     restApi: config.provider.restApi
       ? { cloudWatchRoleArn: config.provider.restApi.cloudWatchRoleArn }
       : undefined,
+  });
+
+  dc.set(CLOUDFRONT_CONFIG, {
+    cachePolicies: config.cdn.cachePolicies,
+    originRequestPolicies: config.cdn.originRequestPolicies,
+    distributions: config.cdn.distributions,
   });
 
   return dc;

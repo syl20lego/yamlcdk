@@ -1,6 +1,9 @@
 import { z } from "zod";
 import {
+  cachePolicySchema,
+  distributionSchema,
   dynamodbTableSchema,
+  originRequestPolicySchema,
   s3BucketSchema,
   snsTopicSchema,
   sqsQueueSchema,
@@ -29,4 +32,10 @@ export const apisDomainConfigSchema = z.object({
       cloudWatchRoleArn: z.string().min(1).optional(),
     })
     .optional(),
+});
+
+export const cloudfrontDomainConfigSchema = z.object({
+  cachePolicies: z.record(z.string(), cachePolicySchema),
+  originRequestPolicies: z.record(z.string(), originRequestPolicySchema),
+  distributions: z.record(z.string(), distributionSchema),
 });

@@ -12,14 +12,18 @@ import { z } from "zod";
 import { createDomainConfigKey } from "./domain-configs.js";
 import {
   apisDomainConfigSchema as sharedApisDomainConfigSchema,
+  cloudfrontDomainConfigSchema as sharedCloudfrontDomainConfigSchema,
   dynamodbDomainConfigSchema as sharedDynamodbDomainConfigSchema,
   s3DomainConfigSchema as sharedS3DomainConfigSchema,
   snsDomainConfigSchema as sharedSnsDomainConfigSchema,
   sqsDomainConfigSchema as sharedSqsDomainConfigSchema,
 } from "../../schema/domain-configs.js";
 import {
+  cachePolicySchema as sharedCachePolicySchema,
+  distributionSchema as sharedDistributionSchema,
   dynamodbKeySchema as sharedDynamodbKeySchema,
   dynamodbTableSchema as sharedDynamodbTableSchema,
+  originRequestPolicySchema as sharedOriginRequestPolicySchema,
   s3BucketSchema as sharedS3BucketSchema,
   snsSubscriptionSchema as sharedSnsSubscriptionSchema,
   snsTopicSchema as sharedSnsTopicSchema,
@@ -94,4 +98,27 @@ export type ApisDomainConfig = z.infer<typeof apisDomainConfigSchema>;
 export const APIS_CONFIG = createDomainConfigKey(
   "apis",
   apisDomainConfigSchema,
+);
+
+// ─── CloudFront ──────────────────────────────────────────────
+
+export const cachePolicyConfigSchema = sharedCachePolicySchema;
+
+export type CloudFrontCachePolicyConfig = z.infer<typeof cachePolicyConfigSchema>;
+
+export const originRequestPolicyConfigSchema = sharedOriginRequestPolicySchema;
+
+export type CloudFrontOriginRequestPolicyConfig = z.infer<typeof originRequestPolicyConfigSchema>;
+
+export const distributionConfigSchema = sharedDistributionSchema;
+
+export type CloudFrontDistributionConfig = z.infer<typeof distributionConfigSchema>;
+
+export const cloudfrontDomainConfigSchema = sharedCloudfrontDomainConfigSchema;
+
+export type CloudFrontDomainConfig = z.infer<typeof cloudfrontDomainConfigSchema>;
+
+export const CLOUDFRONT_CONFIG = createDomainConfigKey(
+  "cloudfront",
+  cloudfrontDomainConfigSchema,
 );

@@ -11,6 +11,7 @@ import { parseServiceModel } from "../../compiler/model.js";
 import { DomainConfigs } from "../../compiler/plugins/index.js";
 import {
   APIS_CONFIG,
+  CLOUDFRONT_CONFIG,
   DYNAMODB_CONFIG,
   S3_CONFIG,
   SNS_CONFIG,
@@ -19,6 +20,9 @@ import {
   type S3BucketConfig,
   type SNSTopicConfig,
   type SQSQueueConfig,
+  type CloudFrontCachePolicyConfig,
+  type CloudFrontDistributionConfig,
+  type CloudFrontOriginRequestPolicyConfig,
 } from "../../compiler/plugins/native-domain-configs.js";
 import { adaptCfnTemplate } from "../cloudformation/adapt.js";
 import { parseCfnYaml, resolveLogicalId } from "../cloudformation/cfn-yaml.js";
@@ -69,6 +73,11 @@ interface DomainState {
   dynamodb: Record<string, DynamoDBTableConfig>;
   sqs: Record<string, SQSQueueConfig>;
   sns: Record<string, SNSTopicConfig>;
+  cloudfront: {
+    cachePolicies: Record<string, CloudFrontCachePolicyConfig>;
+    originRequestPolicies: Record<string, CloudFrontOriginRequestPolicyConfig>;
+    distributions: Record<string, CloudFrontDistributionConfig>;
+  };
 }
 
 const SERVERLESS_URL_CORS_ALLOW_ALL_HEADERS = [
@@ -242,15 +251,27 @@ function inferBuildMode(handler: string): FunctionModel["build"] {
 }
 
 function createEmptyDomainState(): DomainState {
-  return { s3: {}, dynamodb: {}, sqs: {}, sns: {} };
+  return {
+    s3: {},
+    dynamodb: {},
+    sqs: {},
+    sns: {},
+    cloudfront: { cachePolicies: {}, originRequestPolicies: {}, distributions: {} },
+  };
 }
 
 function readDomainState(domainConfigs: DomainConfigs): DomainState {
+  const cf = domainConfigs.get(CLOUDFRONT_CONFIG);
   return {
     s3: domainConfigs.get(S3_CONFIG)?.buckets ?? {},
     dynamodb: domainConfigs.get(DYNAMODB_CONFIG)?.tables ?? {},
     sqs: domainConfigs.get(SQS_CONFIG)?.queues ?? {},
     sns: domainConfigs.get(SNS_CONFIG)?.topics ?? {},
+    cloudfront: {
+      cachePolicies: cf?.cachePolicies ?? {},
+      originRequestPolicies: cf?.originRequestPolicies ?? {},
+      distributions: cf?.distributions ?? {},
+    },
   };
 }
 
@@ -260,6 +281,11 @@ function writeDomainState(domainConfigs: DomainConfigs, state: DomainState): voi
   domainConfigs.set(SQS_CONFIG, { queues: state.sqs });
   domainConfigs.set(SNS_CONFIG, { topics: state.sns });
   domainConfigs.set(APIS_CONFIG, { restApi: undefined });
+  domainConfigs.set(CLOUDFRONT_CONFIG, {
+    cachePolicies: state.cloudfront.cachePolicies,
+    originRequestPolicies: state.cloudfront.originRequestPolicies,
+    distributions: state.cloudfront.distributions,
+  });
 }
 
 function mergeFunctionUrl(
@@ -1126,6 +1152,20 @@ function mergeDomainStates(
         ],
       ),
     ),
+    cloudfront: {
+      cachePolicies: {
+        ...topLevelState.cloudfront.cachePolicies,
+        ...resourceState.cloudfront.cachePolicies,
+      },
+      originRequestPolicies: {
+        ...topLevelState.cloudfront.originRequestPolicies,
+        ...resourceState.cloudfront.originRequestPolicies,
+      },
+      distributions: {
+        ...topLevelState.cloudfront.distributions,
+        ...resourceState.cloudfront.distributions,
+      },
+    },
   };
 }
 

@@ -7,6 +7,7 @@ import { snsDomain } from "./sns.js";
 import { eventbridgeDomain } from "./eventbridge.js";
 import { functionsDomain } from "./functions.js";
 import { apisDomain } from "./apis.js";
+import { cloudfrontDomain } from "./cloudfront.js";
 
 /** All native domain plugins in recommended registration order. */
 export const nativeDomains: readonly DomainPlugin[] = [
@@ -17,6 +18,7 @@ export const nativeDomains: readonly DomainPlugin[] = [
   functionsDomain,
   eventbridgeDomain,
   apisDomain,
+  cloudfrontDomain,
 ];
 
 /** Create a DomainRegistry pre-loaded with all native domains. */
@@ -36,4 +38,5 @@ export {
   eventbridgeDomain,
   functionsDomain,
   apisDomain,
+  cloudfrontDomain,
 };
