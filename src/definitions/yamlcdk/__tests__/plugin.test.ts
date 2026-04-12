@@ -141,6 +141,7 @@ describe("adaptConfig", () => {
           dynamodb: {
             users: {
               partitionKey: { name: "pk", type: "string" },
+              removalPolicy: "RETAIN",
               stream: "NEW_AND_OLD_IMAGES",
             },
           },
@@ -152,6 +153,7 @@ describe("adaptConfig", () => {
     const dynamoConfig = model.domainConfigs.require(DYNAMODB_CONFIG);
 
     expect(dynamoConfig.tables.users.partitionKey.name).toBe("pk");
+    expect(dynamoConfig.tables.users.removalPolicy).toBe("RETAIN");
     expect(dynamoConfig.tables.users.stream).toBe("NEW_AND_OLD_IMAGES");
   });
 
@@ -224,6 +226,112 @@ describe("adaptConfig", () => {
       "rest",
       "sqs",
     ]);
+  });
+
+  test("normalizes managed references in events and IAM resources", () => {
+    const normalized = normalizeConfig(
+      validateServiceConfig({
+        service: "demo",
+        functions: {
+          fn: {
+            handler: "src/fn.handler",
+            iam: ["readUsers"],
+            events: {
+              sqs: [{ queue: "ref:jobs" }],
+              s3: [{ bucket: "ref:uploads", events: ["s3:ObjectCreated:*"] }],
+            },
+          },
+        },
+        iam: {
+          statements: {
+            readUsers: {
+              actions: ["dynamodb:GetItem"],
+              resources: ["ref:users"],
+            },
+          },
+        },
+      }),
+    );
+    const model = adaptConfig(normalized);
+
+    const sqsEvent = model.functions.fn.events.find((event) => event.type === "sqs");
+    const s3Event = model.functions.fn.events.find((event) => event.type === "s3");
+
+    expect(sqsEvent).toBeDefined();
+    if (sqsEvent?.type === "sqs") {
+      expect(sqsEvent.queue).toBe("jobs");
+    }
+
+    expect(s3Event).toBeDefined();
+    if (s3Event?.type === "s3") {
+      expect(s3Event.bucket).toBe("uploads");
+    }
+
+    expect(model.iam.statements.readUsers.resources).toEqual(["users"]);
+  });
+
+  test("accepts bare and ref-prefixed managed references equivalently", () => {
+    const createModel = (prefix: "" | "ref:") =>
+      adaptConfig(
+        normalizeConfig(
+          validateServiceConfig({
+            service: "demo",
+            functions: {
+              fn: {
+                handler: "src/fn.handler",
+                events: {
+                  sqs: [{ queue: `${prefix}jobs`, batchSize: 5 }],
+                  s3: [{ bucket: `${prefix}uploads`, events: ["s3:ObjectCreated:*"] }],
+                  sns: [{ topic: `${prefix}alerts` }],
+                  dynamodb: [{ table: `${prefix}users`, startingPosition: "LATEST" }],
+                },
+                iam: ["readUsers"],
+              },
+            },
+            iam: {
+              statements: {
+                readUsers: {
+                  actions: ["dynamodb:GetItem"],
+                  resources: [`${prefix}users`],
+                },
+              },
+            },
+            storage: {
+              s3: { uploads: {} },
+              dynamodb: {
+                users: {
+                  partitionKey: { name: "pk", type: "string" },
+                  stream: "NEW_AND_OLD_IMAGES",
+                },
+              },
+            },
+            messaging: {
+              sqs: { jobs: {} },
+              sns: { alerts: {} },
+            },
+          }),
+        ),
+      );
+
+    const bareModel = createModel("");
+    const refModel = createModel("ref:");
+
+    expect(bareModel.functions.fn.events).toEqual(refModel.functions.fn.events);
+    expect(bareModel.functions.fn.events).toEqual(
+      expect.arrayContaining([
+        { type: "sqs", queue: "jobs", batchSize: 5 },
+        { type: "s3", bucket: "uploads", events: ["s3:ObjectCreated:*"] },
+        { type: "sns", topic: "alerts" },
+        {
+          type: "dynamodb-stream",
+          table: "users",
+          batchSize: undefined,
+          startingPosition: "LATEST",
+        },
+      ]),
+    );
+    expect(bareModel.iam.statements.readUsers.resources).toEqual(["users"]);
+    expect(refModel.iam.statements.readUsers.resources).toEqual(["users"]);
   });
 
   test("applies function URL defaults and carries explicit CORS config", () => {

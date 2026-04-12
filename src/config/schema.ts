@@ -1,40 +1,27 @@
 import { z } from "zod";
+import {
+  functionUrlAuthTypeSchema,
+  functionUrlCorsSchema,
+  functionUrlInvokeModeSchema,
+} from "../schema/function-url.js";
+import { iamStatementSchema as sharedIamStatementSchema } from "../schema/iam.js";
+import { buildConfigSchema } from "../schema/build.js";
+import { deploymentConfigSchema } from "../schema/deployment.js";
+import {
+  dynamodbTableSchema,
+  s3BucketSchema,
+  snsTopicSchema,
+  sqsQueueSchema,
+} from "../schema/domain-primitives.js";
 
 export const runtimeSchema = z.enum(["nodejs20.x", "nodejs22.x", 'nodejs24.x']);
 
-const functionUrlAuthTypeSchema = z.enum(["AWS_IAM", "NONE"]);
-const functionUrlInvokeModeSchema = z.enum(["BUFFERED", "RESPONSE_STREAM"]);
-const functionUrlHttpMethodSchema = z.enum([
-  "GET",
-  "PUT",
-  "HEAD",
-  "POST",
-  "DELETE",
-  "PATCH",
-  "OPTIONS",
-  "*",
-]);
-
-const functionUrlCorsSchema = z.object({
-  allowCredentials: z.boolean().optional(),
-  allowHeaders: z.array(z.string().min(1)).optional(),
-  allowedMethods: z.array(functionUrlHttpMethodSchema).optional(),
-  allowOrigins: z.array(z.string().min(1)).optional(),
-  exposeHeaders: z.array(z.string().min(1)).optional(),
-  maxAge: z.number().int().min(0).optional(),
-});
+export const iamStatementSchema = sharedIamStatementSchema;
 
 const functionUrlSchema = z.object({
   authType: functionUrlAuthTypeSchema.optional(),
   cors: functionUrlCorsSchema.optional(),
   invokeMode: functionUrlInvokeModeSchema.optional(),
-});
-
-export const iamStatementSchema = z.object({
-  sid: z.string().optional(),
-  effect: z.enum(["Allow", "Deny"]).optional(),
-  actions: z.array(z.string()).min(1),
-  resources: z.array(z.string()).min(1),
 });
 
 export const functionSchema = z.object({
@@ -45,14 +32,7 @@ export const functionSchema = z.object({
   environment: z.record(z.string(), z.string()).optional(),
   iam: z.array(z.string()).optional(),
   url: functionUrlSchema.optional(),
-  build: z
-    .object({
-      mode: z.enum(["typescript", "external", "none"]).optional(),
-      command: z.string().min(1).optional(),
-      cwd: z.string().min(1).optional(),
-      handler: z.string().min(1).optional(),
-    })
-    .optional(),
+  build: buildConfigSchema.optional(),
   events: z
     .object({
       http: z
@@ -120,22 +100,7 @@ export const functionSchema = z.object({
     .optional(),
 });
 
-export const tableSchema = z.object({
-  partitionKey: z.object({
-    name: z.string().min(1),
-    type: z.enum(["string", "number", "binary"]),
-  }),
-  sortKey: z
-    .object({
-      name: z.string().min(1),
-      type: z.enum(["string", "number", "binary"]),
-    })
-    .optional(),
-  billingMode: z.enum(["PAY_PER_REQUEST", "PROVISIONED"]).optional(),
-  stream: z
-    .enum(["NEW_IMAGE", "OLD_IMAGE", "NEW_AND_OLD_IMAGES", "KEYS_ONLY"])
-    .optional(),
-});
+export const tableSchema = dynamodbTableSchema;
 
 export const serviceConfigSchema = z.object({
   service: z.string().min(1),
@@ -158,18 +123,7 @@ export const serviceConfigSchema = z.object({
           cloudWatchRoleArn: z.string().min(1).optional(),
         })
         .optional(),
-      deployment: z
-        .object({
-          fileAssetsBucketName: z.string().min(1).optional(),
-          imageAssetsRepositoryName: z.string().min(1).optional(),
-          cloudFormationServiceRoleArn: z.string().min(1).optional(),
-          cloudFormationExecutionRoleArn: z.string().min(1).optional(),
-          deployRoleArn: z.string().min(1).optional(),
-          qualifier: z.string().min(1).optional(),
-          useCliCredentials: z.boolean().optional(),
-          requireBootstrap: z.boolean().optional(),
-        })
-        .optional(),
+      deployment: deploymentConfigSchema.optional(),
     })
     .optional(),
   functions: z.record(z.string(), functionSchema).optional(),
@@ -178,10 +132,7 @@ export const serviceConfigSchema = z.object({
       s3: z
         .record(
           z.string(),
-          z.object({
-            versioned: z.boolean().optional(),
-            autoDeleteObjects: z.boolean().optional(),
-          }),
+          s3BucketSchema,
         )
         .optional(),
       dynamodb: z.record(z.string(), tableSchema).optional(),
@@ -192,24 +143,13 @@ export const serviceConfigSchema = z.object({
       sqs: z
         .record(
           z.string(),
-          z.object({
-            visibilityTimeout: z.number().int().min(0).max(43200).optional(),
-          }),
+          sqsQueueSchema,
         )
         .optional(),
       sns: z
         .record(
           z.string(),
-          z.object({
-            subscriptions: z
-              .array(
-                z.object({
-                  type: z.literal("sqs"),
-                  target: z.string().min(1),
-                }),
-              )
-              .optional(),
-          }),
+          snsTopicSchema,
         )
         .optional(),
     })
@@ -241,49 +181,24 @@ export const normalizedServiceConfigSchema = z.object({
         cloudWatchRoleArn: z.string().min(1).optional(),
       })
       .optional(),
-    deployment: z
-      .object({
-        fileAssetsBucketName: z.string().min(1).optional(),
-        imageAssetsRepositoryName: z.string().min(1).optional(),
-        cloudFormationServiceRoleArn: z.string().min(1).optional(),
-        cloudFormationExecutionRoleArn: z.string().min(1).optional(),
-        deployRoleArn: z.string().min(1).optional(),
-        qualifier: z.string().min(1).optional(),
-        useCliCredentials: z.boolean().optional(),
-        requireBootstrap: z.boolean().optional(),
-      })
-      .optional(),
+    deployment: deploymentConfigSchema.optional(),
   }),
   functions: z.record(z.string(), functionSchema),
   storage: z.object({
     s3: z.record(
       z.string(),
-      z.object({
-        versioned: z.boolean().optional(),
-        autoDeleteObjects: z.boolean().optional(),
-      }),
+      s3BucketSchema,
     ),
     dynamodb: z.record(z.string(), tableSchema),
   }),
   messaging: z.object({
     sqs: z.record(
       z.string(),
-      z.object({
-        visibilityTimeout: z.number().int().min(0).max(43200).optional(),
-      }),
+      sqsQueueSchema,
     ),
     sns: z.record(
       z.string(),
-      z.object({
-        subscriptions: z
-          .array(
-            z.object({
-              type: z.literal("sqs"),
-              target: z.string().min(1),
-            }),
-          )
-          .optional(),
-      }),
+      snsTopicSchema,
     ),
   }),
   iam: z.object({

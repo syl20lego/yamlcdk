@@ -22,6 +22,16 @@ import {
 } from "../../compiler/plugins/native-domain-configs.js";
 import { adaptCfnTemplate } from "../cloudformation/adapt.js";
 import { parseCfnYaml, resolveLogicalId } from "../cloudformation/cfn-yaml.js";
+import {
+  appendUniqueEvent,
+  createDynamodbStreamEvent,
+  createEventBridgeEvent,
+  createHttpEvent,
+  createRestEvent,
+  createS3Event,
+  createSnsEvent,
+  createSqsEvent,
+} from "../shared-event-adapters.js";
 import { resolveDefinitionVariables } from "../variables/resolve.js";
 
 interface CfnResource {
@@ -225,11 +235,6 @@ function optionalObject(
   return value as Record<string, unknown>;
 }
 
-function ensureLeadingSlash(pathValue: string): string {
-  if (pathValue === "*") return pathValue;
-  return pathValue.startsWith("/") ? pathValue : `/${pathValue}`;
-}
-
 function inferBuildMode(handler: string): FunctionModel["build"] {
   const [modulePath] = handler.split(".");
   const absTs = path.resolve(process.cwd(), `${modulePath}.ts`);
@@ -255,16 +260,6 @@ function writeDomainState(domainConfigs: DomainConfigs, state: DomainState): voi
   domainConfigs.set(SQS_CONFIG, { queues: state.sqs });
   domainConfigs.set(SNS_CONFIG, { topics: state.sns });
   domainConfigs.set(APIS_CONFIG, { restApi: undefined });
-}
-
-function appendUniqueEvent(
-  events: EventDeclaration[],
-  event: EventDeclaration,
-): void {
-  const serialized = JSON.stringify(event);
-  if (!events.some((entry) => JSON.stringify(entry) === serialized)) {
-    events.push(event);
-  }
 }
 
 function mergeFunctionUrl(
@@ -440,12 +435,7 @@ function adaptHttpEvent(value: unknown, description: string): EventDeclaration {
     if (parts.length !== 2) {
       throw new Error(`${description} must look like "METHOD /path".`);
     }
-    return {
-      type: "rest",
-      method: parts[0].toUpperCase(),
-      path: ensureLeadingSlash(parts[1]),
-      apiKeyRequired: false,
-    };
+    return createRestEvent(parts[0], parts[1], false);
   }
 
   if (value === null || typeof value !== "object" || Array.isArray(value)) {
@@ -464,13 +454,11 @@ function adaptHttpEvent(value: unknown, description: string): EventDeclaration {
     );
   }
 
-  return {
-    type: "rest",
-    method: requireString(config.method, `${description}.method`).toUpperCase(),
-    path: ensureLeadingSlash(requireString(config.path, `${description}.path`)),
-    apiKeyRequired:
-      typeof config.private === "boolean" ? config.private : false,
-  };
+  return createRestEvent(
+    requireString(config.method, `${description}.method`),
+    requireString(config.path, `${description}.path`),
+    typeof config.private === "boolean" ? config.private : false,
+  );
 }
 
 function adaptHttpApiEvent(value: unknown, description: string): EventDeclaration {
@@ -490,11 +478,7 @@ function adaptHttpApiEvent(value: unknown, description: string): EventDeclaratio
         `${description} catch-all routes are not supported by yamlcdk's current HTTP API model.`,
       );
     }
-    return {
-      type: "http",
-      method: parts[0].toUpperCase(),
-      path: ensureLeadingSlash(parts[1]),
-    };
+    return createHttpEvent(parts[0], parts[1]);
   }
 
   if (value === null || typeof value !== "object" || Array.isArray(value)) {
@@ -509,16 +493,15 @@ function adaptHttpApiEvent(value: unknown, description: string): EventDeclaratio
     );
   }
 
-  return {
-    type: "http",
+  return createHttpEvent(
     method,
-    path: ensureLeadingSlash(requireString(config.path, `${description}.path`)),
-  };
+    requireString(config.path, `${description}.path`),
+  );
 }
 
 function adaptScheduleEvent(value: unknown, description: string): EventDeclaration {
   if (typeof value === "string") {
-    return { type: "eventbridge", schedule: value };
+    return createEventBridgeEvent({ schedule: value });
   }
 
   if (value === null || typeof value !== "object" || Array.isArray(value)) {
@@ -537,10 +520,10 @@ function adaptScheduleEvent(value: unknown, description: string): EventDeclarati
 
   const rate = config.rate;
   if (typeof rate === "string") {
-    return { type: "eventbridge", schedule: rate };
+    return createEventBridgeEvent({ schedule: rate });
   }
   if (Array.isArray(rate) && rate.length > 0 && typeof rate[0] === "string") {
-    return { type: "eventbridge", schedule: rate[0] };
+    return createEventBridgeEvent({ schedule: rate[0] });
   }
 
   throw new Error(`${description}.rate must be a string or non-empty array.`);
@@ -553,11 +536,7 @@ function adaptS3Event(
 ): EventDeclaration {
   if (typeof value === "string") {
     domains.s3[value] ??= {};
-    return {
-      type: "s3",
-      bucket: value,
-      events: ["s3:ObjectCreated:*"],
-    };
+    return createS3Event(value, ["s3:ObjectCreated:*"]);
   }
 
   if (value === null || typeof value !== "object" || Array.isArray(value)) {
@@ -577,13 +556,9 @@ function adaptS3Event(
   }
 
   domains.s3[bucket] ??= {};
-  return {
-    type: "s3",
-    bucket,
-    events: [
-      optionalString(config.event, `${description}.event`) ?? "s3:ObjectCreated:*",
-    ],
-  };
+  return createS3Event(bucket, [
+    optionalString(config.event, `${description}.event`) ?? "s3:ObjectCreated:*",
+  ]);
 }
 
 function adaptSnsEvent(
@@ -598,7 +573,7 @@ function adaptSnsEvent(
       );
     }
     domains.sns[value] ??= {};
-    return { type: "sns", topic: value };
+    return createSnsEvent(value);
   }
 
   if (value === null || typeof value !== "object" || Array.isArray(value)) {
@@ -622,7 +597,7 @@ function adaptSnsEvent(
   const arnRef = resolveLogicalId(config.arn);
   if (arnRef) {
     domains.sns[arnRef] ??= {};
-    return { type: "sns", topic: arnRef };
+    return createSnsEvent(arnRef);
   }
 
   if (typeof config.arn === "string") {
@@ -638,7 +613,7 @@ function adaptSnsEvent(
   }
 
   domains.sns[topicName] ??= {};
-  return { type: "sns", topic: topicName };
+  return createSnsEvent(topicName);
 }
 
 function adaptSqsEvent(
@@ -668,13 +643,12 @@ function adaptSqsEvent(
   }
 
   domains.sqs[queue] ??= {};
-  return {
-    type: "sqs",
+  return createSqsEvent(
     queue,
-    batchSize: optionalNumber(config.batchSize, `${description}.batchSize`) as
+    optionalNumber(config.batchSize, `${description}.batchSize`) as
       | number
       | undefined,
-  };
+  );
 }
 
 function adaptStreamEvent(value: unknown, description: string): EventDeclaration {
@@ -702,17 +676,13 @@ function adaptStreamEvent(value: unknown, description: string): EventDeclaration
     );
   }
 
-  return {
-    type: "dynamodb-stream",
+  return createDynamodbStreamEvent(
     table,
-    batchSize: optionalNumber(config.batchSize, `${description}.batchSize`) as
+    optionalNumber(config.batchSize, `${description}.batchSize`) as
       | number
       | undefined,
-    startingPosition: optionalString(
-      config.startingPosition,
-      `${description}.startingPosition`,
-    ),
-  };
+    optionalString(config.startingPosition, `${description}.startingPosition`),
+  );
 }
 
 function adaptEventBridgeEvent(
@@ -757,11 +727,10 @@ function adaptEventBridgeEvent(
     throw new Error(`${description} must define schedule or pattern.`);
   }
 
-  return {
-    type: "eventbridge",
-    schedule,
-    eventPattern: pattern,
-  };
+  return createEventBridgeEvent(
+    { schedule, eventPattern: pattern },
+    `${description} must define schedule or pattern.`,
+  );
 }
 
 function adaptEvents(

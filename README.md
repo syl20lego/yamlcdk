@@ -28,7 +28,13 @@ yamlcdk supports three input formats with different maturity levels:
 - **CloudFormation YAML** — Native CloudFormation templates are supported with limited scope today, but support will grow as more features are added.
 - **Serverless Framework YAML** — Basic compatibility is provided for Serverless configs mapped onto yamlcdk's compiler model. Some plugins are supported natively, but there is no goal to support all plugins. Current support is best-effort for common use cases.
 
-All three formats maintain backward compatibility as the CLI evolves and new features are added.
+Format stability policy (alpha):
+
+- **yamlcdk format** is still work-in-progress. Breaking schema/behavior changes are currently allowed, and migrations are not guaranteed during alpha.
+- **Serverless Framework** and **CloudFormation** inputs should keep stable user-facing behavior as yamlcdk evolves.
+- Internal canonicalization/adaptation for Serverless and CloudFormation may change when needed to align with the yamlcdk compiler model, but those internal changes should not introduce additional external breakage.
+
+Contributor expectation: when a change intentionally alters user-facing behavior, call it out explicitly in docs/release notes with impact and upgrade guidance.
 
 ### Roadmap & Contributions
 
@@ -287,7 +293,7 @@ iam:
         - dynamodb:GetItem
         - dynamodb:Query
       resources:
-        - ref:users
+        - users
 
 functions:
   hello:
@@ -298,7 +304,7 @@ functions:
 
 Notes:
 
-- `ref:<resourceName>` in IAM `resources` resolves to the ARN of an yamlcdk-managed S3 bucket, DynamoDB table, SQS queue, or SNS topic.
+- IAM `resources` accepts either `<resourceName>` or `ref:<resourceName>` for yamlcdk-managed S3 buckets, DynamoDB tables, SQS queues, and SNS topics.
 - A function can also use a direct role ARN instead of statement keys, for example:
   `iam: ["arn:aws:iam::123456789012:role/MyExistingRole"]`
 - Do not mix statement keys and a role ARN in the same function.
@@ -424,7 +430,7 @@ Notes:
 
 ## Function event types
 
-For S3, SQS, SNS, and DynamoDB events, reference yamlcdk-managed resources with `ref:<name>`.
+For S3, SQS, SNS, and DynamoDB events, reference yamlcdk-managed resources with either `<name>` or `ref:<name>`.
 
 ### `http`
 
@@ -468,7 +474,7 @@ functions:
     handler: src/handlers/thumbnailer.handler
     events:
       s3:
-        - bucket: ref:uploads
+        - bucket: uploads
           events:
             - s3:ObjectCreated:*
 ```
@@ -494,7 +500,7 @@ functions:
     handler: src/handlers/worker.handler
     events:
       sqs:
-        - queue: ref:jobs
+        - queue: jobs
           batchSize: 10
 ```
 
@@ -508,7 +514,7 @@ functions:
     handler: src/handlers/notifier.handler
     events:
       sns:
-        - topic: ref:events
+        - topic: events
 ```
 
 ### `dynamodb`
@@ -521,7 +527,7 @@ functions:
     handler: src/handlers/projector.handler
     events:
       dynamodb:
-        - table: ref:users
+        - table: users
           batchSize: 100
           startingPosition: LATEST
 ```

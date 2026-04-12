@@ -45,6 +45,23 @@ describe("functions domain e2e", () => {
     );
   });
 
+  test("synthesizes nodejs24.x runtime when configured", () => {
+    const { template } = synthServiceConfig({
+      functions: {
+        hello: functionConfig({
+          runtime: "nodejs24.x",
+        }),
+      },
+    });
+
+    template.hasResourceProperties(
+      "AWS::Lambda::Function",
+      Match.objectLike({
+        Runtime: "nodejs24.x",
+      }),
+    );
+  });
+
   test("creates a public lambda function URL with CORS and invoke permissions", () => {
     const { template } = synthServiceConfig({
       functions: {
@@ -126,6 +143,47 @@ describe("functions domain e2e", () => {
         },
       }),
     ).toThrow("mixes a role ARN with iam statement references");
+  });
+
+  test("resolves bare managed resource names in IAM statement resources", () => {
+    const { template } = synthServiceConfig({
+      functions: {
+        reader: functionConfig({
+          iam: ["readUsers"],
+        }),
+      },
+      storage: {
+        dynamodb: {
+          users: {
+            partitionKey: { name: "pk", type: "string" },
+          },
+        },
+      },
+      iam: {
+        statements: {
+          readUsers: {
+            actions: ["dynamodb:GetItem"],
+            resources: ["users"],
+          },
+        },
+      },
+    });
+
+    const policies = template.findResources("AWS::IAM::Policy") as Record<
+      string,
+      {
+        Properties?: {
+          PolicyDocument?: {
+            Statement?: Array<{ Resource?: unknown }>;
+          };
+        };
+      }
+    >;
+    const policy = Object.values(policies)[0];
+    const firstStatement = policy?.Properties?.PolicyDocument?.Statement?.[0];
+
+    expect(firstStatement).toBeDefined();
+    expect(JSON.stringify(firstStatement?.Resource)).toContain("Fn::GetAtt");
   });
 
   test("uses stub builds for inline code when stubBuild is enabled", () => {

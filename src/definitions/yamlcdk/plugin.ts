@@ -15,7 +15,17 @@ import type {
 } from "../../compiler/model.js";
 import { parseServiceModel } from "../../compiler/model.js";
 import { DomainConfigs } from "../../compiler/plugins/index.js";
+import { normalizeManagedResourceRef } from "../../compiler/resource-refs.js";
 import path from "node:path";
+import {
+  createDynamodbStreamEvent,
+  createEventBridgeEvent,
+  createHttpEvent,
+  createRestEvent,
+  createS3Event,
+  createSnsEvent,
+  createSqsEvent,
+} from "../shared-event-adapters.js";
 import {
   S3_CONFIG,
   DYNAMODB_CONFIG,
@@ -36,58 +46,57 @@ function adaptEvents(
   const events: EventDeclaration[] = [];
 
   for (const route of fn.events?.http ?? []) {
-    events.push({ type: "http", method: route.method, path: route.path });
+    events.push(createHttpEvent(route.method, route.path));
   }
 
   const resolvedApiKey =
     globalRestApiKeyRequired ?? fn.restApi?.apiKeyRequired ?? false;
   for (const route of fn.events?.rest ?? []) {
-    events.push({
-      type: "rest",
-      method: route.method,
-      path: route.path,
-      apiKeyRequired: resolvedApiKey,
-    });
+    events.push(createRestEvent(route.method, route.path, resolvedApiKey));
   }
 
   for (const s3Event of fn.events?.s3 ?? []) {
-    events.push({
-      type: "s3",
-      bucket: s3Event.bucket,
-      events: s3Event.events,
-    });
+    events.push(
+      createS3Event(
+        normalizeManagedResourceRef(s3Event.bucket),
+        s3Event.events,
+      ),
+    );
   }
 
   for (const sqsEvent of fn.events?.sqs ?? []) {
-    events.push({
-      type: "sqs",
-      queue: sqsEvent.queue,
-      batchSize: sqsEvent.batchSize,
-    });
+    events.push(
+      createSqsEvent(
+        normalizeManagedResourceRef(sqsEvent.queue),
+        sqsEvent.batchSize,
+      ),
+    );
   }
 
   for (const snsEvent of fn.events?.sns ?? []) {
-    events.push({ type: "sns", topic: snsEvent.topic });
+    events.push(createSnsEvent(normalizeManagedResourceRef(snsEvent.topic)));
   }
 
   for (const dynamoEvent of fn.events?.dynamodb ?? []) {
-    events.push({
-      type: "dynamodb-stream",
-      table: dynamoEvent.table,
-      batchSize: dynamoEvent.batchSize,
-      startingPosition: dynamoEvent.startingPosition,
-    });
+    events.push(
+      createDynamodbStreamEvent(
+        normalizeManagedResourceRef(dynamoEvent.table),
+        dynamoEvent.batchSize,
+        dynamoEvent.startingPosition,
+      ),
+    );
   }
 
   for (const ebEvent of fn.events?.eventbridge ?? []) {
-    events.push({
-      type: "eventbridge",
-      schedule: "schedule" in ebEvent ? ebEvent.schedule : undefined,
-      eventPattern:
-        "eventPattern" in ebEvent
-          ? (ebEvent.eventPattern as Record<string, unknown>)
-          : undefined,
-    });
+    events.push(
+      createEventBridgeEvent({
+        schedule: "schedule" in ebEvent ? ebEvent.schedule : undefined,
+        eventPattern:
+          "eventPattern" in ebEvent
+            ? (ebEvent.eventPattern as Record<string, unknown>)
+            : undefined,
+      }),
+    );
   }
 
   return events;
@@ -148,6 +157,22 @@ function adaptDomainConfigs(config: NormalizedServiceConfig): DomainConfigs {
   return dc;
 }
 
+function adaptIam(config: NormalizedServiceConfig): ServiceModel["iam"] {
+  return {
+    statements: Object.fromEntries(
+      Object.entries(config.iam.statements).map(([name, statement]) => [
+        name,
+        {
+          ...statement,
+          resources: statement.resources.map((resource) =>
+            normalizeManagedResourceRef(resource),
+          ),
+        },
+      ]),
+    ),
+  };
+}
+
 export function adaptConfig(config: NormalizedServiceConfig): ServiceModel {
   return parseServiceModel({
     service: config.service,
@@ -161,7 +186,7 @@ export function adaptConfig(config: NormalizedServiceConfig): ServiceModel {
       deployment: config.provider.deployment,
     },
     functions: adaptFunctions(config),
-    iam: { statements: config.iam.statements },
+    iam: adaptIam(config),
     domainConfigs: adaptDomainConfigs(config),
   });
 }
@@ -199,7 +224,7 @@ functions:
         - method: GET
           path: /hello-rest
       sqs:
-        - queue: ref:jobs
+        - queue: jobs
           batchSize: 10
 
 storage:
@@ -229,7 +254,7 @@ iam:
   statements:
     readUsersTable:
       actions: [dynamodb:GetItem, dynamodb:Query]
-      resources: [ref:users]
+      resources: [users]
 `;
 
 // ─── Plugin ─────────────────────────────────────────────────

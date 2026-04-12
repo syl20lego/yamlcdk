@@ -3,6 +3,7 @@ import * as dynamodb from "aws-cdk-lib/aws-dynamodb";
 import * as iam from "aws-cdk-lib/aws-iam";
 import * as lambda from "aws-cdk-lib/aws-lambda";
 import { withStageName } from "../stack/helpers.js";
+import { normalizeManagedResourceRef } from "../resource-refs.js";
 import { DYNAMODB_CONFIG } from "../plugins/native-domain-configs.js";
 import type { DomainPlugin } from "../plugins/index.js";
 
@@ -20,6 +21,15 @@ const STREAM_VIEW_MAP: Record<string, dynamodb.StreamViewType> = {
   NEW_AND_OLD_IMAGES: dynamodb.StreamViewType.NEW_AND_OLD_IMAGES,
   KEYS_ONLY: dynamodb.StreamViewType.KEYS_ONLY,
 };
+
+function toDynamoRemovalPolicy(
+  removalPolicy: "DESTROY" | "RETAIN" | undefined,
+): cdk.RemovalPolicy {
+  if (removalPolicy === "RETAIN") {
+    return cdk.RemovalPolicy.RETAIN;
+  }
+  return cdk.RemovalPolicy.DESTROY;
+}
 
 export const dynamodbDomain: DomainPlugin = {
   name: "dynamodb",
@@ -48,7 +58,7 @@ export const dynamodbDomain: DomainPlugin = {
           table.billingMode === "PROVISIONED"
             ? dynamodb.BillingMode.PROVISIONED
             : dynamodb.BillingMode.PAY_PER_REQUEST,
-        removalPolicy: cdk.RemovalPolicy.DESTROY,
+        removalPolicy: toDynamoRemovalPolicy(table.removalPolicy),
         stream: streamView,
       });
     }
@@ -57,12 +67,12 @@ export const dynamodbDomain: DomainPlugin = {
   bind(ctx, events) {
     for (const event of events) {
       if (event.type !== "dynamodb-stream") continue;
-      const refName = event.table.replace("ref:", "");
+      const refName = normalizeManagedResourceRef(event.table);
       const table = ctx.refs[refName];
       if (!table || !("tableStreamArn" in table)) {
         throw new Error(
           `DynamoDB stream event references unknown table "${refName}". ` +
-            `Define it under storage.dynamodb with stream enabled.`,
+            `Define it under storage.dynamodb with stream enabled, and reference it as "<name>" or "ref:<name>".`,
         );
       }
       const dynamoTable = table as dynamodb.Table;

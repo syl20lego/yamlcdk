@@ -36,7 +36,27 @@ describe("dynamodb domain e2e", () => {
       "AWS::DynamoDB::Table",
     );
     expect(table?.Properties?.KeySchema).toHaveLength(1);
+    expect(table?.DeletionPolicy).toBe("Delete");
     expect(table?.Properties?.StreamSpecification).toBeUndefined();
+  });
+
+  test("supports a table-level retain removal policy", () => {
+    const { template } = synthServiceConfig({
+      storage: {
+        dynamodb: {
+          orders: {
+            partitionKey: { name: "pk", type: "string" },
+            removalPolicy: "RETAIN",
+          },
+        },
+      },
+    });
+
+    const table = firstResourceOfType<ResourceDefinition>(
+      template,
+      "AWS::DynamoDB::Table",
+    );
+    expect(table?.DeletionPolicy).toBe("Retain");
   });
 
   test("adds sort key and stream settings when the optional fields are configured", () => {

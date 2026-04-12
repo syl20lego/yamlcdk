@@ -122,6 +122,23 @@ function summarizeLinkedEvent(event: EventDeclaration): Record<string, unknown> 
   }
 }
 
+function toLambdaRuntime(runtime: string | undefined): lambda.Runtime {
+  switch (runtime) {
+    case undefined:
+    case "nodejs20.x":
+      return lambda.Runtime.NODEJS_20_X;
+    case "nodejs22.x":
+      return lambda.Runtime.NODEJS_22_X;
+    case "nodejs24.x":
+      return lambda.Runtime.NODEJS_24_X;
+    default:
+      throw new Error(
+        `Unsupported runtime "${runtime}" for Lambda function. ` +
+          `Supported runtimes: nodejs20.x, nodejs22.x, nodejs24.x.`,
+      );
+  }
+}
+
 export const functionsDomain: DomainPlugin = {
   name: "functions",
 
@@ -160,10 +177,7 @@ export const functionsDomain: DomainPlugin = {
       const build = ctx.builds[name];
       const fnResource = new lambda.Function(ctx.stack, `Function${name}`, {
         functionName: withStageName(name, ctx.model.provider.stage),
-        runtime:
-          fn.runtime === "nodejs22.x"
-            ? lambda.Runtime.NODEJS_22_X
-            : lambda.Runtime.NODEJS_20_X,
+        runtime: toLambdaRuntime(fn.runtime),
         handler: build.handler,
         code: build.inline
           ? lambda.Code.fromInline(build.inline)

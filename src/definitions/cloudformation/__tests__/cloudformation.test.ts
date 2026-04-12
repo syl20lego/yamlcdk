@@ -676,6 +676,41 @@ Resources:
     expect(methods.sort()).toEqual(["GET", "POST"]);
   });
 
+  test("normalizes HTTP API route method and path via shared adapters", () => {
+    const parsed = parseCfnYaml(`
+AWSTemplateFormatVersion: "2010-09-09"
+Metadata:
+  yamlcdk:
+    service: demo
+Resources:
+  ApiFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      Handler: src/api.handler
+  HttpApi:
+    Type: AWS::ApiGatewayV2::Api
+    Properties:
+      ProtocolType: HTTP
+  ApiIntegration:
+    Type: AWS::ApiGatewayV2::Integration
+    Properties:
+      ApiId: !Ref HttpApi
+      IntegrationType: AWS_PROXY
+      IntegrationUri: !GetAtt ApiFunction.Arn
+  PostRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref HttpApi
+      RouteKey: "post items"
+      Target: !Join ["/", ["integrations", !Ref ApiIntegration]]
+`);
+
+    const model = adaptCfnTemplate(parsed, "t.yml");
+    expect(model.functions.ApiFunction.events).toEqual([
+      { type: "http", method: "POST", path: "/items" },
+    ]);
+  });
+
   test("rejects Lambda function URLs with Qualifier", () => {
     const parsed = parseCfnYaml(`
 AWSTemplateFormatVersion: "2010-09-09"

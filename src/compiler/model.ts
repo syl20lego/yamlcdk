@@ -12,21 +12,20 @@
  */
 
 import { z } from "zod";
-import type { DomainConfigs } from "./plugins/domain-configs.js";
+import { DomainConfigs } from "./plugins/domain-configs.js";
+import { deploymentConfigSchema as sharedDeploymentConfigSchema } from "../schema/deployment.js";
+import { iamStatementSchema as sharedIamStatementSchema } from "../schema/iam.js";
+import { buildConfigSchema as sharedBuildConfigSchema } from "../schema/build.js";
+import {
+  functionUrlAuthTypeSchema as sharedFunctionUrlAuthTypeSchema,
+  functionUrlCorsSchema as sharedFunctionUrlCorsSchema,
+  functionUrlHttpMethodSchema as sharedFunctionUrlHttpMethodSchema,
+  functionUrlInvokeModeSchema as sharedFunctionUrlInvokeModeSchema,
+} from "../schema/function-url.js";
 
 // ─── Deployment ─────────────────────────────────────────────
 
-export const deploymentConfigSchema = z.object({
-  fileAssetsBucketName: z.string().min(1).optional(),
-  imageAssetsRepositoryName: z.string().min(1).optional(),
-  cloudFormationServiceRoleArn: z.string().min(1).optional(),
-  cloudFormationExecutionRoleArn: z.string().min(1).optional(),
-  deployRoleArn: z.string().min(1).optional(),
-  qualifier: z.string().min(1).optional(),
-  useCliCredentials: z.boolean().optional(),
-  requireBootstrap: z.boolean().optional(),
-});
-
+export const deploymentConfigSchema = sharedDeploymentConfigSchema;
 export type DeploymentConfig = z.infer<typeof deploymentConfigSchema>;
 
 // ─── Provider ───────────────────────────────────────────────
@@ -44,13 +43,7 @@ export type ProviderConfig = z.infer<typeof providerConfigSchema>;
 
 // ─── IAM ────────────────────────────────────────────────────
 
-export const iamStatementSchema = z.object({
-  sid: z.string().optional(),
-  effect: z.enum(["Allow", "Deny"]).optional(),
-  actions: z.array(z.string()).min(1),
-  resources: z.array(z.string()).min(1),
-});
-
+export const iamStatementSchema = sharedIamStatementSchema;
 export type IamStatement = z.infer<typeof iamStatementSchema>;
 
 export const iamConfigSchema = z.object({
@@ -61,46 +54,18 @@ export type IamConfig = z.infer<typeof iamConfigSchema>;
 
 // ─── Functions ──────────────────────────────────────────────
 
-export const buildConfigSchema = z.object({
-  mode: z.enum(["typescript", "external", "none"]).optional(),
-  command: z.string().min(1).optional(),
-  cwd: z.string().min(1).optional(),
-  handler: z.string().min(1).optional(),
-});
-
+export const buildConfigSchema = sharedBuildConfigSchema;
 export type BuildConfig = z.infer<typeof buildConfigSchema>;
 
-export const functionUrlAuthTypeSchema = z.enum(["AWS_IAM", "NONE"]);
-
+export const functionUrlAuthTypeSchema = sharedFunctionUrlAuthTypeSchema;
 export type FunctionUrlAuthType = z.infer<typeof functionUrlAuthTypeSchema>;
 
-export const functionUrlInvokeModeSchema = z.enum([
-  "BUFFERED",
-  "RESPONSE_STREAM",
-]);
-
+export const functionUrlInvokeModeSchema = sharedFunctionUrlInvokeModeSchema;
 export type FunctionUrlInvokeMode = z.infer<typeof functionUrlInvokeModeSchema>;
 
-export const functionUrlHttpMethodSchema = z.enum([
-  "GET",
-  "PUT",
-  "HEAD",
-  "POST",
-  "DELETE",
-  "PATCH",
-  "OPTIONS",
-  "*",
-]);
+export const functionUrlHttpMethodSchema = sharedFunctionUrlHttpMethodSchema;
 
-export const functionUrlCorsSchema = z.object({
-  allowCredentials: z.boolean().optional(),
-  allowHeaders: z.array(z.string().min(1)).optional(),
-  allowedMethods: z.array(functionUrlHttpMethodSchema).optional(),
-  allowOrigins: z.array(z.string().min(1)).optional(),
-  exposeHeaders: z.array(z.string().min(1)).optional(),
-  maxAge: z.number().int().min(0).optional(),
-});
-
+export const functionUrlCorsSchema = sharedFunctionUrlCorsSchema;
 export type FunctionUrlCorsConfig = z.infer<typeof functionUrlCorsSchema>;
 
 export const functionUrlConfigSchema = z.object({
@@ -151,11 +116,19 @@ export const eventDeclarationSchema = z.discriminatedUnion("type", [
     batchSize: z.number().int().min(1).max(10000).optional(),
     startingPosition: z.string().optional(),
   }),
-  z.object({
-    type: z.literal("eventbridge"),
-    schedule: z.string().optional(),
-    eventPattern: z.record(z.string(), z.unknown()).optional(),
-  }),
+  z
+    .object({
+      type: z.literal("eventbridge"),
+      schedule: z.string().min(1).optional(),
+      eventPattern: z.record(z.string(), z.unknown()).optional(),
+    })
+    .refine(
+      (value) => value.schedule !== undefined || value.eventPattern !== undefined,
+      {
+        message:
+          'EventBridge event must define at least one of "schedule" or "eventPattern".',
+      },
+    ),
 ]);
 
 export type EventDeclaration = z.infer<typeof eventDeclarationSchema>;
@@ -218,8 +191,12 @@ export function parseServiceModel(input: unknown): ServiceModel {
     typeof input !== "object" ||
     !("domainConfigs" in input)
   ) {
-    throw new Error("ServiceModel must include a domainConfigs instance.");
+    throw new Error("ServiceModel must include a DomainConfigs instance.");
+  }
+  const domainConfigs = (input as { domainConfigs: unknown }).domainConfigs;
+  if (!(domainConfigs instanceof DomainConfigs)) {
+    throw new Error("ServiceModel must include a DomainConfigs instance.");
   }
   const parsed = serviceModelSchema.parse(input);
-  return { ...parsed, domainConfigs: (input as ServiceModel).domainConfigs };
+  return { ...parsed, domainConfigs };
 }

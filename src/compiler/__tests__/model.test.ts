@@ -113,6 +113,14 @@ describe("model Zod schemas", () => {
     }
   });
 
+  test("eventDeclarationSchema rejects empty eventbridge event", () => {
+    expect(() =>
+      eventDeclarationSchema.parse({
+        type: "eventbridge",
+      }),
+    ).toThrow();
+  });
+
   test("iamStatementSchema rejects empty actions", () => {
     expect(() =>
       iamStatementSchema.parse({
@@ -131,7 +139,20 @@ describe("model Zod schemas", () => {
         functions: {},
         iam: { statements: {} },
       }),
-    ).toThrow("domainConfigs");
+    ).toThrow("DomainConfigs");
+  });
+
+  test("parseServiceModel rejects non-DomainConfigs domainConfigs values", () => {
+    expect(() =>
+      parseServiceModel({
+        service: "demo",
+        stackName: "demo-dev",
+        provider: { region: "us-east-1", stage: "dev" },
+        functions: {},
+        iam: { statements: {} },
+        domainConfigs: {},
+      }),
+    ).toThrow("DomainConfigs");
   });
 
   test("parseServiceModel validates and returns ServiceModel", () => {

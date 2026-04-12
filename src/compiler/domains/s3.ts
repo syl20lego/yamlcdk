@@ -2,6 +2,7 @@ import cdk from "aws-cdk-lib";
 import * as s3 from "aws-cdk-lib/aws-s3";
 import * as s3n from "aws-cdk-lib/aws-s3-notifications";
 import { withStageName } from "../stack/helpers.js";
+import { normalizeManagedResourceRef } from "../resource-refs.js";
 import { S3_CONFIG } from "../plugins/native-domain-configs.js";
 import type { DomainPlugin } from "../plugins/index.js";
 
@@ -65,11 +66,12 @@ export const s3Domain: DomainPlugin = {
   bind(ctx, events) {
     for (const event of events) {
       if (event.type !== "s3") continue;
-      const refName = event.bucket.replace("ref:", "");
+      const refName = normalizeManagedResourceRef(event.bucket);
       const bucket = ctx.refs[refName];
       if (!bucket || !("addEventNotification" in bucket)) {
         throw new Error(
-          `S3 event references unknown bucket "${refName}". Define it under storage.s3.`,
+          `S3 event references unknown bucket "${refName}". ` +
+            `Define it under storage.s3 and reference it as "<name>" or "ref:<name>".`,
         );
       }
       const s3Bucket = bucket as s3.Bucket;

@@ -83,11 +83,13 @@ describe("domain config Zod schemas", () => {
       tables: {
         users: {
           partitionKey: { name: "pk", type: "string" },
+          removalPolicy: "RETAIN",
           stream: "NEW_AND_OLD_IMAGES",
         },
       },
     });
 
+    expect(result.tables.users.removalPolicy).toBe("RETAIN");
     expect(result.tables.users.stream).toBe("NEW_AND_OLD_IMAGES");
   });
 

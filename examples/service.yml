@@ -37,12 +37,12 @@ functions:
         - method: GET
           path: /hello
       sqs:
-        - queue: ref:jobs
+        - queue: jobs
           batchSize: 10
       sns:
-        - topic: ref:events
+        - topic: events
       dynamodb:
-        - table: ref:users
+        - table: users
           batchSize: 100
           startingPosition: LATEST
       eventbridge:
@@ -77,4 +77,4 @@ iam:
         - dynamodb:GetItem
         - dynamodb:Query
       resources:
-        - ref:users
+        - users

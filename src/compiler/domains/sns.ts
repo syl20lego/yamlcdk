@@ -2,6 +2,7 @@ import * as sns from "aws-cdk-lib/aws-sns";
 import * as snsSubscriptions from "aws-cdk-lib/aws-sns-subscriptions";
 import * as sqs from "aws-cdk-lib/aws-sqs";
 import { withStageName } from "../stack/helpers.js";
+import { normalizeManagedResourceRef } from "../resource-refs.js";
 import { SNS_CONFIG } from "../plugins/native-domain-configs.js";
 import type { DomainPlugin } from "../plugins/index.js";
 
@@ -37,11 +38,12 @@ export const snsDomain: DomainPlugin = {
   bind(ctx, events) {
     for (const event of events) {
       if (event.type !== "sns") continue;
-      const refName = event.topic.replace("ref:", "");
+      const refName = normalizeManagedResourceRef(event.topic);
       const topic = ctx.refs[refName];
       if (!topic || !("topicArn" in topic)) {
         throw new Error(
-          `SNS event references unknown topic "${refName}". Define it under messaging.sns.`,
+          `SNS event references unknown topic "${refName}". ` +
+            `Define it under messaging.sns and reference it as "<name>" or "ref:<name>".`,
         );
       }
       (topic as sns.Topic).addSubscription(

@@ -10,20 +10,29 @@
 
 import { z } from "zod";
 import { createDomainConfigKey } from "./domain-configs.js";
+import {
+  apisDomainConfigSchema as sharedApisDomainConfigSchema,
+  dynamodbDomainConfigSchema as sharedDynamodbDomainConfigSchema,
+  s3DomainConfigSchema as sharedS3DomainConfigSchema,
+  snsDomainConfigSchema as sharedSnsDomainConfigSchema,
+  sqsDomainConfigSchema as sharedSqsDomainConfigSchema,
+} from "../../schema/domain-configs.js";
+import {
+  dynamodbKeySchema as sharedDynamodbKeySchema,
+  dynamodbTableSchema as sharedDynamodbTableSchema,
+  s3BucketSchema as sharedS3BucketSchema,
+  snsSubscriptionSchema as sharedSnsSubscriptionSchema,
+  snsTopicSchema as sharedSnsTopicSchema,
+  sqsQueueSchema as sharedSqsQueueSchema,
+} from "../../schema/domain-primitives.js";
 
 // ─── S3 ─────────────────────────────────────────────────────
 
-export const s3BucketConfigSchema = z.object({
-  versioned: z.boolean().optional(),
-  autoDeleteObjects: z.boolean().optional(),
-});
+export const s3BucketConfigSchema = sharedS3BucketSchema;
 
 export type S3BucketConfig = z.infer<typeof s3BucketConfigSchema>;
 
-export const s3DomainConfigSchema = z.object({
-  buckets: z.record(z.string(), s3BucketConfigSchema),
-  cleanupRoleArn: z.string().min(1).optional(),
-});
+export const s3DomainConfigSchema = sharedS3DomainConfigSchema;
 
 export type S3DomainConfig = z.infer<typeof s3DomainConfigSchema>;
 
@@ -31,27 +40,15 @@ export const S3_CONFIG = createDomainConfigKey("s3", s3DomainConfigSchema);
 
 // ─── DynamoDB ───────────────────────────────────────────────
 
-export const dynamodbKeySchemaSchema = z.object({
-  name: z.string().min(1),
-  type: z.enum(["string", "number", "binary"]),
-});
+export const dynamodbKeySchemaSchema = sharedDynamodbKeySchema;
 
 export type DynamoDBKeySchema = z.infer<typeof dynamodbKeySchemaSchema>;
 
-export const dynamodbTableConfigSchema = z.object({
-  partitionKey: dynamodbKeySchemaSchema,
-  sortKey: dynamodbKeySchemaSchema.optional(),
-  billingMode: z.enum(["PAY_PER_REQUEST", "PROVISIONED"]).optional(),
-  stream: z
-    .enum(["NEW_IMAGE", "OLD_IMAGE", "NEW_AND_OLD_IMAGES", "KEYS_ONLY"])
-    .optional(),
-});
+export const dynamodbTableConfigSchema = sharedDynamodbTableSchema;
 
 export type DynamoDBTableConfig = z.infer<typeof dynamodbTableConfigSchema>;
 
-export const dynamodbDomainConfigSchema = z.object({
-  tables: z.record(z.string(), dynamodbTableConfigSchema),
-});
+export const dynamodbDomainConfigSchema = sharedDynamodbDomainConfigSchema;
 
 export type DynamoDBDomainConfig = z.infer<typeof dynamodbDomainConfigSchema>;
 
@@ -62,15 +59,11 @@ export const DYNAMODB_CONFIG = createDomainConfigKey(
 
 // ─── SQS ────────────────────────────────────────────────────
 
-export const sqsQueueConfigSchema = z.object({
-  visibilityTimeout: z.number().int().min(0).max(43200).optional(),
-});
+export const sqsQueueConfigSchema = sharedSqsQueueSchema;
 
 export type SQSQueueConfig = z.infer<typeof sqsQueueConfigSchema>;
 
-export const sqsDomainConfigSchema = z.object({
-  queues: z.record(z.string(), sqsQueueConfigSchema),
-});
+export const sqsDomainConfigSchema = sharedSqsDomainConfigSchema;
 
 export type SQSDomainConfig = z.infer<typeof sqsDomainConfigSchema>;
 
@@ -78,22 +71,15 @@ export const SQS_CONFIG = createDomainConfigKey("sqs", sqsDomainConfigSchema);
 
 // ─── SNS ────────────────────────────────────────────────────
 
-export const snsSubscriptionConfigSchema = z.object({
-  type: z.literal("sqs"),
-  target: z.string().min(1),
-});
+export const snsSubscriptionConfigSchema = sharedSnsSubscriptionSchema;
 
 export type SNSSubscriptionConfig = z.infer<typeof snsSubscriptionConfigSchema>;
 
-export const snsTopicConfigSchema = z.object({
-  subscriptions: z.array(snsSubscriptionConfigSchema).optional(),
-});
+export const snsTopicConfigSchema = sharedSnsTopicSchema;
 
 export type SNSTopicConfig = z.infer<typeof snsTopicConfigSchema>;
 
-export const snsDomainConfigSchema = z.object({
-  topics: z.record(z.string(), snsTopicConfigSchema),
-});
+export const snsDomainConfigSchema = sharedSnsDomainConfigSchema;
 
 export type SNSDomainConfig = z.infer<typeof snsDomainConfigSchema>;
 
@@ -101,13 +87,7 @@ export const SNS_CONFIG = createDomainConfigKey("sns", snsDomainConfigSchema);
 
 // ─── APIs (HTTP + REST API Gateway) ─────────────────────────
 
-export const apisDomainConfigSchema = z.object({
-  restApi: z
-    .object({
-      cloudWatchRoleArn: z.string().min(1).optional(),
-    })
-    .optional(),
-});
+export const apisDomainConfigSchema = sharedApisDomainConfigSchema;
 
 export type ApisDomainConfig = z.infer<typeof apisDomainConfigSchema>;
 

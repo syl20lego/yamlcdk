@@ -4,6 +4,8 @@ export {
   type DomainConfigKey,
 } from "./domain-configs.js";
 
+export * from "./native-domain-configs.js";
+
 export {
   type DomainPlugin,
   type CompilationContext,

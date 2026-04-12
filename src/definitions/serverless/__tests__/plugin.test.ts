@@ -529,6 +529,30 @@ functions:
     expect(model.domainConfigs.require(SNS_CONFIG).topics.dispatch).toEqual({});
   });
 
+  test("normalizes HTTP and REST route declarations via shared adapters", () => {
+    const model = adaptServerlessConfig(
+      parseCfnYaml(`
+service: demo
+provider:
+  name: aws
+functions:
+  hello:
+    handler: src/hello.handler
+    events:
+      - http: get hello
+      - httpApi:
+          method: post
+          path: items
+`),
+      "serverless.yml",
+    );
+
+    expect(model.functions.hello.events).toEqual([
+      { type: "rest", method: "GET", path: "/hello", apiKeyRequired: false },
+      { type: "http", method: "POST", path: "/items" },
+    ]);
+  });
+
   test("maps deploymentRole and deploymentBucket into canonical deployment config", () => {
     const model = adaptServerlessConfig(
       parseCfnYaml(`

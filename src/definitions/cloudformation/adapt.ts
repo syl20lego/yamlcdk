@@ -11,7 +11,6 @@ import fs from "node:fs";
 import path from "node:path";
 import type {
   ServiceModel,
-  EventDeclaration,
   FunctionModel,
   FunctionUrlConfig,
 } from "../../compiler/model.js";
@@ -31,6 +30,14 @@ import type {
   SNSTopicConfig,
   SNSSubscriptionConfig,
 } from "../../compiler/plugins/native-domain-configs.js";
+import {
+  createDynamodbStreamEvent,
+  createEventBridgeEvent,
+  createHttpEvent,
+  createS3Event,
+  createSnsEvent,
+  createSqsEvent,
+} from "../shared-event-adapters.js";
 import { isCfnRef, resolveLogicalId } from "./cfn-yaml.js";
 
 // ─── CloudFormation template types ──────────────────────────
@@ -375,19 +382,12 @@ function wireEventSourceMappings(
       typeof p.BatchSize === "number" ? p.BatchSize : undefined;
 
     if (sourceType === "AWS::SQS::Queue") {
-      functions[fnId].events.push({
-        type: "sqs",
-        queue: sourceId,
-        batchSize,
-      });
+      functions[fnId].events.push(createSqsEvent(sourceId, batchSize));
     } else if (sourceType === "AWS::DynamoDB::Table") {
       const startingPosition = (p.StartingPosition as string) ?? undefined;
-      functions[fnId].events.push({
-        type: "dynamodb-stream",
-        table: sourceId,
-        batchSize,
-        startingPosition,
-      });
+      functions[fnId].events.push(
+        createDynamodbStreamEvent(sourceId, batchSize, startingPosition),
+      );
     }
   }
 }
@@ -444,10 +444,9 @@ function wireSNSLambdaSubscriptions(
 ): void {
   for (const sub of subscriptions) {
     if (sub.protocol === "lambda" && functions[sub.endpointLogicalId]) {
-      functions[sub.endpointLogicalId].events.push({
-        type: "sns",
-        topic: sub.topicLogicalId,
-      });
+      functions[sub.endpointLogicalId].events.push(
+        createSnsEvent(sub.topicLogicalId),
+      );
     }
   }
 }
@@ -470,11 +469,7 @@ function wireS3Notifications(
       const fnId = resolveLogicalId(lambdaConfig.Function);
       if (!fnId || !functions[fnId]) continue;
 
-      functions[fnId].events.push({
-        type: "s3",
-        bucket: logicalId,
-        events: [lambdaConfig.Event],
-      });
+      functions[fnId].events.push(createS3Event(logicalId, [lambdaConfig.Event]));
     }
   }
 }
@@ -483,7 +478,7 @@ function wireEventBridgeRules(
   resources: Record<string, CfnResource>,
   functions: Record<string, FunctionModel>,
 ): void {
-  for (const [, resource] of getResourcesByType(
+  for (const [logicalId, resource] of getResourcesByType(
     resources,
     "AWS::Events::Rule",
   )) {
@@ -497,19 +492,22 @@ function wireEventBridgeRules(
       const fnId = resolveLogicalId(target.Arn);
       if (!fnId || !functions[fnId]) continue;
 
-      const event: EventDeclaration = {
-        type: "eventbridge",
-        schedule:
-          typeof p.ScheduleExpression === "string"
-            ? p.ScheduleExpression
-            : undefined,
-        eventPattern:
-          p.EventPattern &&
-          typeof p.EventPattern === "object"
-            ? (p.EventPattern as Record<string, unknown>)
-            : undefined,
-      };
-      functions[fnId].events.push(event);
+      functions[fnId].events.push(
+        createEventBridgeEvent(
+          {
+            schedule:
+              typeof p.ScheduleExpression === "string"
+                ? p.ScheduleExpression
+                : undefined,
+            eventPattern:
+              p.EventPattern &&
+              typeof p.EventPattern === "object"
+                ? (p.EventPattern as Record<string, unknown>)
+                : undefined,
+          },
+          `CloudFormation EventBridge rule "${logicalId}" must define ScheduleExpression or EventPattern.`,
+        ),
+      );
     }
   }
 }
@@ -553,11 +551,7 @@ function wireHttpApiRoutes(
     const method = routeKey.slice(0, spaceIdx);
     const path = routeKey.slice(spaceIdx + 1);
 
-    functions[fnId].events.push({
-      type: "http",
-      method,
-      path,
-    });
+    functions[fnId].events.push(createHttpEvent(method, path));
   }
 }
 
