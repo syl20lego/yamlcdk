@@ -10,6 +10,7 @@ import type cdk from "aws-cdk-lib";
 import type * as lambda from "aws-cdk-lib/aws-lambda";
 import type { Construct } from "constructs";
 import type { ServiceModel, EventDeclaration } from "../model.js";
+import type { BuildResult } from "../../runtime/build.js";
 
 // ─── Shared resource refs ───────────────────────────────────
 
@@ -45,6 +46,8 @@ export interface CompilationContext {
   readonly stack: cdk.Stack;
   readonly model: ServiceModel;
   readonly refs: ResourceRefs;
+  /** Pre-computed function build results (keyed by function name). */
+  readonly builds: Readonly<Record<string, BuildResult>>;
 }
 
 // ─── Synthesis result ───────────────────────────────────────
@@ -58,6 +61,31 @@ export interface CompilationContext {
  */
 export interface SynthesisResult {
   readonly events?: readonly EventBinding[];
+}
+
+export type ValidationReportSection =
+  | "Resources"
+  | "Parameters"
+  | "Outputs"
+  | "Rules"
+  | "Conditions";
+
+export type ValidationReportStatus = "valid" | "derived" | "not-derivable";
+
+/**
+ * Structured, medium-agnostic validation metadata emitted by a domain.
+ *
+ * These values are merged into report rows by the runtime layer.
+ * Domains should provide semantic values only — never formatted table strings.
+ */
+export interface DomainValidationContribution {
+  readonly section?: ValidationReportSection;
+  readonly logicalId?: string;
+  readonly name?: string;
+  readonly description?: string;
+  readonly params?: Readonly<Record<string, unknown>>;
+  readonly properties?: Readonly<Record<string, unknown>>;
+  readonly status?: ValidationReportStatus;
 }
 
 // ─── Domain plugin interface ────────────────────────────────
@@ -105,4 +133,14 @@ export interface DomainPlugin {
    * Emit CfnOutputs or perform post-binding cleanup.
    */
   finalize?(ctx: CompilationContext): void;
+
+  /**
+   * Emit structured validation metadata for this domain.
+   *
+   * Returned values are presentation-agnostic and can be rendered
+   * as tables, JSON, or other output media by runtime formatters.
+   */
+  describeValidation?(
+    ctx: CompilationContext,
+  ): readonly DomainValidationContribution[] | void;
 }

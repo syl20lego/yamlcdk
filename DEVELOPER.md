@@ -149,12 +149,13 @@ Key files:
 
 ### Domain plugin lifecycle
 
-`ServiceStack` runs domains in four phases:
+`ServiceStack` runs domains in five phases:
 
 1. `validate`
 2. `synthesize`
 3. `bind`
 4. `finalize`
+5. `describeValidation` (optional, after finalize)
 
 Use them as intended:
 
@@ -162,6 +163,7 @@ Use them as intended:
 - `synthesize` - create CDK constructs and register shared refs in `ctx.refs`
 - `bind` - wire event sources to targets using aggregated `EventBinding[]`
 - `finalize` - outputs or post-bind cleanup
+- `describeValidation` - return structured, presentation-agnostic metadata for the validation report
 
 ### Safe process for a new or changed domain
 
@@ -265,7 +267,7 @@ AWS-aware commands currently follow this flow:
 3. `assertModelResolution(model)`
 4. delegate to a runtime function (`cdkSynth`, `cdkDeploy`, `cdkDiff`, `cdkDestroy`, `cdkBootstrap`)
 
-`validate` is thinner: it loads the model, asserts resolution, and prints success.
+`validate` loads the model, asserts resolution, synthesizes the stack with stub builds (no handler compilation), and renders a structured report of all CloudFormation resources, parameters, outputs, rules, and conditions. Domain plugins can contribute semantic metadata (e.g., memory, timeout, linked events) via `describeValidation()`.
 
 ### Guidelines
 
@@ -345,6 +347,10 @@ What the current suites cover:
   - definition plugin resolution order across supported formats
 - `src/definitions/__e2e__/config-options.test.ts`
   - option/variable flow across the definition loading pipeline
+- `src/runtime/__tests__/validate-report.test.ts`
+  - validation report row collection, domain enrichment, text rendering, JSON output
+- `src/commands/__tests__/validate.test.ts`
+  - validate command with AWS overrides, build bypass, JSON output format
 
 Update tests when you change:
 

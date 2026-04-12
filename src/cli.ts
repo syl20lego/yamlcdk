@@ -89,25 +89,51 @@ program
     runInit(opts.config, opts.format);
   });
 
-program
-  .command("validate")
-  .description("Validate YAML config")
-  .option("-c, --config <path>", "Config file path", "yamlcdk.yml")
-  .allowUnknownOption(true)
-  .allowExcessArguments(true)
-  .action((opts: { config: string }) => {
-    runValidate(opts.config, collectCliOptionVariables(process.argv.slice(2)));
-  });
+interface AwsFlagOptions {
+  configRequired?: boolean;
+  defaultConfigPath?: string;
+}
 
-function withAwsFlags<T extends Command>(cmd: T): T {
-  return cmd
-    .requiredOption("-c, --config <path>", "Config file path")
+function withAwsFlags<T extends Command>(cmd: T, options: AwsFlagOptions = {}): T {
+  const withConfig = options.configRequired === false
+    ? cmd.option(
+        "-c, --config <path>",
+        "Config file path",
+        options.defaultConfigPath ?? "yamlcdk.yml",
+      )
+    : cmd.requiredOption("-c, --config <path>", "Config file path");
+
+  return withConfig
     .allowUnknownOption(true)
     .allowExcessArguments(true)
     .option("--region <region>", "AWS region override")
     .option("--profile <profile>", "AWS profile override")
     .option("--account <account>", "AWS account override");
 }
+
+withAwsFlags(program.command("validate").description("Validate YAML config"), {
+  configRequired: false,
+  defaultConfigPath: "yamlcdk.yml",
+})
+  .option(
+    "--output <format>",
+    "Validate output format (text or json)",
+    "text",
+  )
+  .action(
+  (opts: {
+    config: string;
+    region?: string;
+    profile?: string;
+    account?: string;
+    output?: string;
+  }) => {
+    runValidate({
+      ...opts,
+      opt: collectCliOptionVariables(process.argv.slice(2)),
+    });
+  },
+  );
 
 withAwsFlags(program.command("synth").description("Synthesize CloudFormation"))
   .action(

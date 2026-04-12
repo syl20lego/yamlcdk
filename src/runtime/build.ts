@@ -22,10 +22,32 @@ export interface BuildableConfig {
 export interface BuildResult {
   assetPath: string;
   handler: string;
+  /** When set, use Code.fromInline() instead of Code.fromAsset(). */
+  inline?: string;
 }
 
 function ensureDir(dir: string): void {
   fs.mkdirSync(dir, { recursive: true });
+}
+
+function resolveTypeScriptSourcePath(sourceModulePath: string): string {
+  const absoluteModulePath = path.resolve(process.cwd(), sourceModulePath);
+  if (path.extname(absoluteModulePath)) {
+    return absoluteModulePath;
+  }
+
+  const candidates = [
+    `${absoluteModulePath}.ts`,
+    `${absoluteModulePath}.tsx`,
+    `${absoluteModulePath}.mts`,
+    `${absoluteModulePath}.cts`,
+  ];
+  const matched = candidates.find((candidate) => fs.existsSync(candidate));
+  if (matched) {
+    return matched;
+  }
+
+  return absoluteModulePath;
 }
 
 function compileTypeScriptHandler(
@@ -33,7 +55,7 @@ function compileTypeScriptHandler(
   sourceHandler: string,
 ): BuildResult {
   const [sourceModulePath, sourceExport = "handler"] = sourceHandler.split(".");
-  const absSource = path.resolve(process.cwd(), sourceModulePath);
+  const absSource = resolveTypeScriptSourcePath(sourceModulePath);
   const outRoot = path.resolve(process.cwd(), ".yamlcdk-build", functionName);
   ensureDir(outRoot);
 
@@ -41,6 +63,7 @@ function compileTypeScriptHandler(
     "npx",
     [
       "tsc",
+      "--ignoreConfig",
       absSource,
       "--module",
       "commonjs",
@@ -60,7 +83,7 @@ function compileTypeScriptHandler(
     );
   }
 
-  const relCompiled = `${path.basename(sourceModulePath)}.js`;
+  const relCompiled = `${path.parse(absSource).name}.js`;
   const compiledFile = path.join(outRoot, relCompiled);
   if (!fs.existsSync(compiledFile)) {
     throw new Error(
@@ -110,9 +133,26 @@ function runExternalBuild(
   };
 }
 
+export interface PrepareFunctionBuildsOptions {
+  /** When true, return inline stubs instead of compiling real handlers. */
+  readonly stub?: boolean;
+}
+
+const STUB_INLINE_CODE =
+  "exports.handler = async () => ({ statusCode: 200, body: 'validation' });";
+
 export function prepareFunctionBuilds(
   config: BuildableConfig,
+  options?: PrepareFunctionBuildsOptions,
 ): Record<string, BuildResult> {
+  if (options?.stub) {
+    const output: Record<string, BuildResult> = {};
+    for (const name of Object.keys(config.functions)) {
+      output[name] = { assetPath: "", handler: "index.handler", inline: STUB_INLINE_CODE };
+    }
+    return output;
+  }
+
   const output: Record<string, BuildResult> = {};
   for (const [functionName, fn] of Object.entries(config.functions)) {
     const mode = fn.build?.mode ?? "typescript";

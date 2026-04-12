@@ -107,7 +107,7 @@ You can also start from `examples/service.yml` (yamlcdk format), `examples/serve
 | Command | What it does | Options |
 | --- | --- | --- |
 | `init` | Create a starter config file. | `-c, --config <path>` (default: `yamlcdk.yml`), `-f, --format <format>` (`yamlcdk`, `serverless`, or `cloudformation`, default: `yamlcdk`) |
-| `validate` | Load and validate a config file. | `-c, --config <path>` (default: `yamlcdk.yml`) |
+| `validate` | Validate config and print a synthesized report (overview + detail tables). | shared AWS flags (config defaults to `yamlcdk.yml`) + `--output <text|json>` |
 | `synth` | Synthesize a CloudFormation template and print it to stdout. | shared AWS flags |
 | `diff` | Show the CDK diff for the stack. | shared AWS flags |
 | `deploy` | Deploy the stack. | shared AWS flags + `--require-approval` |
@@ -115,15 +115,32 @@ You can also start from `examples/service.yml` (yamlcdk format), `examples/serve
 
 ## Shared flags
 
-The following flags are available on `synth`, `diff`, `deploy`, and `remove`:
+The following flags are available on `validate`, `synth`, `diff`, `deploy`, and `remove`:
 
-- `-c, --config <path>` - config file path. Required on these commands.
+- `-c, --config <path>` - config file path. Defaults to `yamlcdk.yml` on `validate`; required on `synth`, `diff`, `deploy`, and `remove`.
 - `--region <region>` - AWS region override.
 - `--profile <profile>` - AWS profile override.
 - `--account <account>` - AWS account override.
 
+`validate` prints a local synthesized report (no AWS API calls), for example:
+
+```text
+Validation report (overview):
+Stage | Region    | Section   | Type                  | Name      | Status
+dev   | us-east-1 | Resources | AWS::Lambda::Function | hello-dev | valid
+
+Outputs summary:
+Name             | Type   | Status | Summary
+HttpApiUrl       | Output | valid  | {"Value":{"Fn::Join":[...]}}
+
+AWS::Lambda::Function details:
+Name      | Status | memory | timeout | cors | linkedEvents
+hello-dev | valid  | 256    | 10      | ...  | ...
+```
+
 Command-specific flags:
 
+- `validate --output <text|json>` - choose human-readable tables (`text`, default) or machine-readable report JSON (`json`).
 - `deploy --require-approval` - keep approval for security-related changes. When omitted, yamlcdk deploys with approval disabled. This flag is not supported when `provider.deployment.cloudFormationServiceRoleArn` is set.
 - `remove --force` - skip the destroy confirmation prompt. Use this in CI or any non-interactive shell.
 

@@ -3,6 +3,7 @@ import * as iam from "aws-cdk-lib/aws-iam";
 import * as s3 from "aws-cdk-lib/aws-s3";
 import * as sns from "aws-cdk-lib/aws-sns";
 import * as sqs from "aws-cdk-lib/aws-sqs";
+import { CfnElement, Stack } from "aws-cdk-lib";
 import type { Construct } from "constructs";
 
 /** Minimal IAM statement shape accepted by resolveIamPolicy. */
@@ -57,3 +58,16 @@ export function resolveIamPolicy(
   });
 }
 
+export function tryGetLogicalId(
+  stack: Stack,
+  value: Construct,
+): string | undefined {
+  const cfnElement =
+    value instanceof CfnElement
+      ? value
+      : value.node.defaultChild instanceof CfnElement
+        ? value.node.defaultChild
+        : undefined;
+
+  return cfnElement ? stack.getLogicalId(cfnElement) : undefined;
+}

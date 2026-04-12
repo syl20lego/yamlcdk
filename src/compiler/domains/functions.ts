@@ -1,10 +1,19 @@
 import cdk, { Duration } from "aws-cdk-lib";
 import * as iam from "aws-cdk-lib/aws-iam";
 import * as lambda from "aws-cdk-lib/aws-lambda";
-import { prepareFunctionBuilds } from "../../runtime/build.js";
-import { isIamRoleArn, resolveIamPolicy, withStageName } from "../stack/helpers.js";
-import type { DomainPlugin, EventBinding } from "../plugins/index.js";
+import {
+  isIamRoleArn,
+  resolveIamPolicy,
+  tryGetLogicalId,
+  withStageName,
+} from "../stack/helpers.js";
 import type {
+  DomainPlugin,
+  EventBinding,
+  DomainValidationContribution,
+} from "../plugins/index.js";
+import type {
+  EventDeclaration,
   FunctionUrlConfig,
   FunctionUrlInvokeMode,
 } from "../model.js";
@@ -74,6 +83,45 @@ function toFunctionUrlOptions(
   };
 }
 
+function summarizeLinkedEvent(event: EventDeclaration): Record<string, unknown> {
+  switch (event.type) {
+    case "http":
+      return { type: event.type, method: event.method, path: event.path };
+    case "rest":
+      return {
+        type: event.type,
+        method: event.method,
+        path: event.path,
+        apiKeyRequired: event.apiKeyRequired,
+      };
+    case "s3":
+      return { type: event.type, bucket: event.bucket, events: [...event.events] };
+    case "sqs":
+      return {
+        type: event.type,
+        queue: event.queue,
+        batchSize: event.batchSize ?? 10,
+      };
+    case "sns":
+      return { type: event.type, topic: event.topic };
+    case "dynamodb-stream":
+      return {
+        type: event.type,
+        table: event.table,
+        batchSize: event.batchSize ?? 100,
+        startingPosition: event.startingPosition ?? "LATEST",
+      };
+    case "eventbridge":
+      return {
+        type: event.type,
+        schedule: event.schedule,
+        eventPattern: event.eventPattern,
+      };
+    default:
+      return { type: "unknown" };
+  }
+}
+
 export const functionsDomain: DomainPlugin = {
   name: "functions",
 
@@ -94,7 +142,6 @@ export const functionsDomain: DomainPlugin = {
   },
 
   synthesize(ctx) {
-    const buildOutputs = prepareFunctionBuilds(ctx.model);
     const events: EventBinding[] = [];
 
     for (const [name, fn] of Object.entries(ctx.model.functions)) {
@@ -110,7 +157,7 @@ export const functionsDomain: DomainPlugin = {
           })
         : undefined;
 
-      const build = buildOutputs[name];
+      const build = ctx.builds[name];
       const fnResource = new lambda.Function(ctx.stack, `Function${name}`, {
         functionName: withStageName(name, ctx.model.provider.stage),
         runtime:
@@ -118,7 +165,9 @@ export const functionsDomain: DomainPlugin = {
             ? lambda.Runtime.NODEJS_22_X
             : lambda.Runtime.NODEJS_20_X,
         handler: build.handler,
-        code: lambda.Code.fromAsset(build.assetPath),
+        code: build.inline
+          ? lambda.Code.fromInline(build.inline)
+          : lambda.Code.fromAsset(build.assetPath),
         timeout: Duration.seconds(fn.timeout ?? 30),
         memorySize: fn.memorySize ?? 256,
         environment: fn.environment ? { ...fn.environment } : undefined,
@@ -151,5 +200,35 @@ export const functionsDomain: DomainPlugin = {
     }
 
     return { events };
+  },
+
+  describeValidation(ctx) {
+    const contributions: DomainValidationContribution[] = [];
+
+    for (const [name, fn] of Object.entries(ctx.model.functions)) {
+      const ref = ctx.refs[name];
+      if (!ref || !(ref instanceof lambda.Function)) {
+        continue;
+      }
+      const logicalId = tryGetLogicalId(ctx.stack, ref);
+      if (!logicalId) {
+        continue;
+      }
+
+      contributions.push({
+        section: "Resources",
+        logicalId,
+        description: `Lambda function "${name}"`,
+        properties: {
+          memory: fn.memorySize ?? 256,
+          timeout: fn.timeout ?? 30,
+          cors: fn.url?.cors ?? null,
+          linkedEvents: fn.events.map(summarizeLinkedEvent),
+        },
+        status: "valid",
+      });
+    }
+
+    return contributions;
   },
 };

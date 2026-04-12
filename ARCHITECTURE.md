@@ -224,6 +224,7 @@ All built-in definition plugins provide `generateStarter()`, which is what `src/
 - `synthesize(ctx)`
 - `bind(ctx, events)`
 - `finalize(ctx)`
+- `describeValidation(ctx)` — optional, returns structured metadata for the validation report
 
 Domain plugins own the **model-to-CDK** step for a specific infrastructure area.
 
@@ -283,17 +284,18 @@ It represents the intended combined registry shape. The active code path uses `D
 
 The compiler lifecycle to preserve is:
 
-**load -> validate -> synthesize -> bind -> finalize**
+**load -> validate -> synthesize -> bind -> finalize -> describeValidation**
 
-The first stage happens before `ServiceStack` exists; the remaining stages are executed by `ServiceStack` in `src/compiler/stack-builder.ts`.
+The first stage happens before `ServiceStack` exists; the remaining stages are executed by `ServiceStack` in `src/compiler/stack-builder.ts`. Function builds are pre-computed in `buildApp()` and passed to domains via `ctx.builds`.
 
 | Stage | Primary code | What happens |
 | --- | --- | --- |
 | `load` | `src/config/loader.ts`, `src/definitions/registry.ts`, `src/definitions/yamlcdk/plugin.ts`, `src/definitions/serverless/plugin.ts`, `src/definitions/cloudformation/plugin.ts`, `src/definitions/variables/resolve.ts`, `src/config/schema.ts`, `src/config/normalize.ts`, `src/runtime/aws.ts` | The file is dispatched to the matching definition plugin via `DefinitionRegistry`, variables are resolved, and the result is adapted into the canonical `ServiceModel` before CLI AWS overrides are applied and re-validated. |
 | `validate` | `ServiceStack` phase 1 + `domain.validate?.(ctx)` | Domains reject invalid or inconsistent state before construct creation. |
-| `synthesize` | `ServiceStack` phase 2 + `domain.synthesize?.(ctx)` | Domains create CDK constructs, write them into `ctx.refs`, and optionally return `EventBinding[]`. |
+| `synthesize` | `ServiceStack` phase 2 + `domain.synthesize?.(ctx)` | Domains create CDK constructs, write them into `ctx.refs`, and optionally return `EventBinding[]`. Pre-computed build results are available via `ctx.builds`. |
 | `bind` | `ServiceStack` phase 3 + `domain.bind?.(ctx, allEvents)` | Domains wire event sources and APIs to already-created resources using the aggregated bindings. |
 | `finalize` | `ServiceStack` phase 4 + `domain.finalize?.(ctx)` | Final post-processing hook for outputs or cleanup. The hook exists even though the native domains currently do not use it. |
+| `describeValidation` | `ServiceStack` phase 5 + `domain.describeValidation?.(ctx)` | Optional. Domains return structured, presentation-agnostic metadata for the validation report (e.g., memory, timeout, linked events). The runtime renders this as text tables or JSON. |
 
 ### Load stage in more detail
 
@@ -576,7 +578,7 @@ src/
 ├── cli.ts                          # Commander-based CLI entrypoint
 ├── commands/                       # CLI command handlers
 │   ├── init.ts                     # Starter config generation
-│   ├── validate.ts                 # Load + validate model
+│   ├── validate.ts                 # Load + synthesize with stub builds + render validation report
 │   ├── synth.ts                    # Load + override AWS config + synth
 │   ├── diff.ts                     # Load + override AWS config + diff
 │   ├── deploy.ts                   # Load + override AWS config + deploy
@@ -648,4 +650,4 @@ To match the current code, prefer these exact terms:
 
 If a maintainer needs one sentence to remember the current design, it is:
 
-> `yamlcdk` loads a definition through a definition plugin (resolved via `DefinitionRegistry`) into a canonical `ServiceModel`, stores domain-specific slices in `DomainConfigs`, and then runs ordered domain plugins through `validate -> synthesize -> bind -> finalize` to build the CDK stack.
+> `yamlcdk` loads a definition through a definition plugin (resolved via `DefinitionRegistry`) into a canonical `ServiceModel`, stores domain-specific slices in `DomainConfigs`, and then runs ordered domain plugins through `validate -> synthesize -> bind -> finalize -> describeValidation` to build the CDK stack.

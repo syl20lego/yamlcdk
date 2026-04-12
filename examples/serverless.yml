@@ -15,7 +15,7 @@ provider:
 
 functions:
   hello:
-    handler: src/handlers/hello.handler
+    handler: src/hello.handler
     timeout: 10
     memorySize: 256
     environment:

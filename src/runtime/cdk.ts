@@ -6,6 +6,11 @@ import { createRequire } from "node:module";
 import type { NormalizedServiceConfig } from "../config/normalize.js";
 import type { ServiceModel } from "../compiler/model.js";
 import { buildApp } from "../compiler/stack-builder.js";
+import {
+  buildValidationReport,
+  renderValidationReportJson,
+  renderValidationReportText,
+} from "./validate-report.js";
 
 const require = createRequire(import.meta.url);
 
@@ -229,6 +234,22 @@ export function cdkSynth(config: CdkRuntimeConfig): void {
   const template = path.join(outdir, `${config.stackName}.template.json`);
   const content = fs.readFileSync(template, "utf8");
   process.stdout.write(content);
+}
+
+export type ValidateOutputFormat = "text" | "json";
+
+export function cdkValidate(
+  config: CdkRuntimeConfig,
+  outputFormat: ValidateOutputFormat = "text",
+): void {
+  const { app, stack } = buildApp(config, { stubBuild: true });
+  app.synth();
+  const report = buildValidationReport(stack.model, stack);
+  process.stdout.write(
+    outputFormat === "json"
+      ? renderValidationReportJson(report)
+      : renderValidationReportText(report),
+  );
 }
 
 export function cdkDeploy(config: CdkRuntimeConfig, requireApproval: boolean): void {

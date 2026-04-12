@@ -18,7 +18,7 @@ Resources:
   HelloFunction:
     Type: AWS::Lambda::Function
     Properties:
-      Handler: src/handlers/hello.handler
+      Handler: src/hello.handler
       Runtime: nodejs20.x
       Timeout: 10
       MemorySize: 256

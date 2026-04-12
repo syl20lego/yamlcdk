@@ -6,7 +6,7 @@
 3. `ARCHITECTURE.md` (plugin lifecycle + ordering invariants)
 
 ## Big-picture architecture (what must stay true)
-- Pipeline is `load -> validate -> synthesize -> bind -> finalize` in `src/compiler/stack-builder.ts`.
+- Pipeline is `load -> validate -> synthesize -> bind -> finalize -> describeValidation` in `src/compiler/stack-builder.ts`.
 - Input format detection is delegated to `DefinitionRegistry` (`src/definitions/registry.ts`) in strict order: `cloudformation`, `serverless`, `yamlcdk` catch-all.
 - All formats must adapt into canonical `ServiceModel` (`src/compiler/model.ts`) plus domain slices in `DomainConfigs` (`src/compiler/plugins/domain-configs.ts`).
 - Domain plugins are independent units coordinated through `ctx.refs` + `EventBinding[]`, not direct cross-domain imports.

@@ -244,6 +244,63 @@ describe("compiler", () => {
     );
   });
 
+  test("collects validation contributions from domain plugins", () => {
+    const config = normalizeConfig(
+      validateServiceConfig({
+        service: "demo",
+        provider: {
+          region: "us-east-1",
+          deployment: { requireBootstrap: false },
+        },
+        functions: {
+          hello: {
+            handler: "src/hello.handler",
+            build: { mode: "none" },
+            timeout: 15,
+            memorySize: 512,
+          },
+        },
+      }),
+    );
+
+    const { stack } = buildApp(config);
+    expect(stack.validationContributions.length).toBeGreaterThan(0);
+
+    const lambdaContrib = stack.validationContributions.find(
+      (c) => c.section === "Resources" && c.description?.includes("hello"),
+    );
+    expect(lambdaContrib).toBeDefined();
+    expect(lambdaContrib?.properties).toMatchObject({
+      memory: 512,
+      timeout: 15,
+    });
+  });
+
+  test("passes pre-computed builds through context to domains", () => {
+    const config = normalizeConfig(
+      validateServiceConfig({
+        service: "demo",
+        provider: {
+          region: "us-east-1",
+          deployment: { requireBootstrap: false },
+        },
+        functions: {
+          hello: {
+            handler: "src/hello.handler",
+            build: { mode: "none" },
+          },
+        },
+      }),
+    );
+
+    const { stack } = buildApp(config, { stubBuild: true });
+    const template = stack.node.children.find(
+      (c) => c.node.id.startsWith("Function"),
+    );
+    expect(template).toBeDefined();
+    expect(stack.validationContributions.length).toBeGreaterThan(0);
+  });
+
   test("infers cli credentials synthesizer with asset bucket and cloudformation execution role", () => {
     const config = normalizeConfig(
       validateServiceConfig({

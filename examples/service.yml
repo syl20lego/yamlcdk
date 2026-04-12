@@ -15,7 +15,7 @@ provider:
 
 functions:
   hello:
-    handler: src/handlers/hello.handler
+    handler: src/hello.handler
     runtime: nodejs20.x
     build:
       mode: typescript

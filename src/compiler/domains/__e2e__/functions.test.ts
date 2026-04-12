@@ -1,6 +1,9 @@
-import { Match } from "aws-cdk-lib/assertions";
+import { Match, Template } from "aws-cdk-lib/assertions";
 import { describe, expect, test } from "vitest";
 import { functionConfig, synthServiceConfig } from "./helpers.js";
+import { buildApp } from "../../stack-builder.js";
+import { normalizeConfig } from "../../../config/normalize.js";
+import { validateServiceConfig } from "../../../config/schema.js";
 
 describe("functions domain e2e", () => {
   test("creates a lambda function with required settings only", () => {
@@ -123,5 +126,53 @@ describe("functions domain e2e", () => {
         },
       }),
     ).toThrow("mixes a role ARN with iam statement references");
+  });
+
+  test("uses stub builds for inline code when stubBuild is enabled", () => {
+    const raw = validateServiceConfig({
+      service: "demo",
+      functions: {
+        hello: functionConfig(),
+      },
+    });
+    const config = normalizeConfig(raw);
+    const { stack } = buildApp(config, { stubBuild: true });
+    const template = Template.fromStack(stack);
+
+    template.resourceCountIs("AWS::Lambda::Function", 1);
+    template.hasResourceProperties(
+      "AWS::Lambda::Function",
+      Match.objectLike({ Handler: "index.handler" }),
+    );
+  });
+
+  test("describeValidation returns semantic properties for functions", () => {
+    const { stack } = synthServiceConfig({
+      functions: {
+        hello: functionConfig({
+          timeout: 20,
+          memorySize: 1024,
+          events: {
+            http: [{ method: "POST", path: "/submit" }],
+          },
+        }),
+      },
+    });
+
+    expect(stack.validationContributions.length).toBeGreaterThan(0);
+    const contrib = stack.validationContributions.find(
+      (c) => c.description?.includes("hello"),
+    );
+    expect(contrib).toBeDefined();
+    expect(contrib?.properties).toMatchObject({
+      memory: 1024,
+      timeout: 20,
+    });
+    const events = contrib?.properties?.linkedEvents as Array<Record<string, unknown>>;
+    expect(events).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ type: "http", method: "POST", path: "/submit" }),
+      ]),
+    );
   });
 });

@@ -4,20 +4,30 @@ import { Construct } from "constructs";
 import type { ServiceModel } from "./model.js";
 import { serviceModelSchema } from "./model.js";
 import type { NormalizedServiceConfig } from "../config/normalize.js";
-import type { EventBinding, CompilationContext } from "./plugins/index.js";
+import type {
+  EventBinding,
+  CompilationContext,
+  DomainValidationContribution,
+} from "./plugins/index.js";
 import { DomainConfigs } from "./plugins/index.js";
 import type { DomainRegistry } from "./plugins/registry.js";
 import { createNativeDomainRegistry } from "./domains/index.js";
 import { createStackSynthesizer } from "./synthesizer.js";
 import { validateDeploymentMode } from "./stack/validation.js";
 import { adaptConfig } from "../definitions/yamlcdk/plugin.js";
+import type { BuildResult } from "../runtime/build.js";
+import { prepareFunctionBuilds } from "../runtime/build.js";
 
 export class ServiceStack extends Stack {
+  readonly refs: Record<string, Construct>;
+  readonly validationContributions: readonly DomainValidationContribution[];
+
   constructor(
     scope: Construct,
     id: string,
     readonly model: ServiceModel,
     domainRegistry: DomainRegistry,
+    builds: Readonly<Record<string, BuildResult>>,
     props?: StackProps,
   ) {
     super(scope, id, props);
@@ -29,7 +39,8 @@ export class ServiceStack extends Stack {
     });
 
     const refs: Record<string, Construct> = {};
-    const ctx: CompilationContext = { stack: this, model, refs };
+    this.refs = refs;
+    const ctx: CompilationContext = { stack: this, model, refs, builds };
     const domains = domainRegistry.all();
 
     // Phase 1: Validate
@@ -55,6 +66,15 @@ export class ServiceStack extends Stack {
     for (const domain of domains) {
       domain.finalize?.(ctx);
     }
+
+    const contributions: DomainValidationContribution[] = [];
+    for (const domain of domains) {
+      const values = domain.describeValidation?.(ctx);
+      if (values?.length) {
+        contributions.push(...values);
+      }
+    }
+    this.validationContributions = contributions;
   }
 }
 
@@ -73,10 +93,11 @@ function isServiceModel(input: unknown): input is ServiceModel {
 
 export function buildApp(
   input: ServiceModel | NormalizedServiceConfig,
-  options?: { outdir?: string },
+  options?: { outdir?: string; stubBuild?: boolean },
 ): { app: cdk.App; stack: ServiceStack } {
   const model = isServiceModel(input) ? input : adaptConfig(input);
   validateDeploymentMode(model);
+  const builds = prepareFunctionBuilds(model, { stub: options?.stubBuild });
   const app = new cdk.App({ outdir: options?.outdir });
   const synthesizer = createStackSynthesizer(model);
   const domainRegistry = createNativeDomainRegistry();
@@ -85,6 +106,7 @@ export function buildApp(
     model.stackName,
     model,
     domainRegistry,
+    builds,
     {
       env: {
         account: model.provider.account,

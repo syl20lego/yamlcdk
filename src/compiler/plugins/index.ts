@@ -10,7 +10,12 @@ export {
   type EventBinding,
   type ResourceRefs,
   type SynthesisResult,
+  type DomainValidationContribution,
+  type ValidationReportSection,
+  type ValidationReportStatus,
 } from "./domain-plugin.js";
+
+export { type BuildResult } from "../../runtime/build.js";
 
 export {
   type DefinitionPlugin,
