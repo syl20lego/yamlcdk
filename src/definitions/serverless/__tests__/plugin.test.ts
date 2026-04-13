@@ -316,17 +316,6 @@ custom:
 });
 
 describe("env variable source", () => {
-  const originalEnv = { ...process.env };
-
-  function resetEnv() {
-    for (const key of Object.keys(process.env)) {
-      if (!(key in originalEnv)) {
-        delete process.env[key];
-      } else {
-        process.env[key] = originalEnv[key];
-      }
-    }
-  }
 
   test("resolves ${env:VAR_NAME} from process.env", () => {
     process.env.YAMLCDK_TEST_REGION = "eu-west-1";
@@ -459,6 +448,141 @@ custom:
       expect(model.provider.stage).toBe("dev");
     } finally {
       delete process.env.YAMLCDK_XFILE_STAGE;
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+    }
+  });
+
+  test("multi-pass resolves back-references from imported env files to root context", () => {
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "yamlcdk-multipass-"));
+    try {
+      fs.writeFileSync(
+        path.join(tmpDir, "global.yml"),
+        [
+          "custom:",
+          "  global:",
+          "    STAGE: ${opt:stage, self:provider.stage}",
+          "    ENVIRONMENT: ${file(./${self:custom.global.STAGE}.env.yml):${self:custom.global.STAGE}.ENVIRONMENT}",
+          "    REGION: ${file(./${self:custom.global.ENVIRONMENT}.env.yml):${self:custom.global.ENVIRONMENT}.REGION}",
+          "    BARCODE_DOMAIN: ${file(./${self:custom.global.ENVIRONMENT}.env.yml):${self:custom.global.ENVIRONMENT}.BARCODE_DOMAIN}",
+        ].join("\n"),
+        "utf8",
+      );
+
+      fs.writeFileSync(
+        path.join(tmpDir, "dev.env.yml"),
+        [
+          "dev:",
+          "  ENVIRONMENT: dev",
+          "  REGION: ca-central-1",
+          "  BARCODE_DOMAIN: barcodes-${self:custom.global.STAGE}.example.com",
+        ].join("\n"),
+        "utf8",
+      );
+
+      const serverlessPath = path.join(tmpDir, "serverless.yml");
+      fs.writeFileSync(
+        serverlessPath,
+        [
+          "service: demo",
+          "provider:",
+          "  name: aws",
+          "  stage: dev",
+          "  region: ${self:custom.global.REGION}",
+          "custom:",
+          "  global: ${file(./global.yml):custom.global}",
+          "functions:",
+          "  hello:",
+          "    handler: src/hello.handler",
+          "    environment:",
+          "      DOMAIN: ${self:custom.global.BARCODE_DOMAIN}",
+        ].join("\n"),
+        "utf8",
+      );
+
+      const parsed = parseCfnYaml(fs.readFileSync(serverlessPath, "utf8"));
+      const model = adaptServerlessConfig(parsed, serverlessPath);
+      expect(model.provider.region).toBe("ca-central-1");
+      expect(model.provider.stage).toBe("dev");
+      expect(model.functions.hello.environment?.DOMAIN).toBe(
+        "barcodes-dev.example.com",
+      );
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+    }
+  });
+
+  test("multi-pass does not resolve fallback when dependency is deferred", () => {
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "yamlcdk-deferred-fallback-"));
+    try {
+      fs.writeFileSync(
+        path.join(tmpDir, "global.yml"),
+        [
+          "custom:",
+          "  global:",
+          "    STAGE: ${opt:stage, self:provider.stage}",
+          "    LABEL: ${file(./${self:custom.global.STAGE}.env.yml):${self:custom.global.STAGE}.LABEL, 'wrong-fallback'}",
+        ].join("\n"),
+        "utf8",
+      );
+
+      fs.writeFileSync(
+        path.join(tmpDir, "dev.env.yml"),
+        ["dev:", "  LABEL: correct-label"].join("\n"),
+        "utf8",
+      );
+
+      const serverlessPath = path.join(tmpDir, "serverless.yml");
+      fs.writeFileSync(
+        serverlessPath,
+        [
+          "service: demo",
+          "provider:",
+          "  name: aws",
+          "  stage: dev",
+          "custom:",
+          "  global: ${file(./global.yml):custom.global}",
+          "functions:",
+          "  hello:",
+          "    handler: src/hello.handler",
+          "    environment:",
+          "      MY_LABEL: ${self:custom.global.LABEL}",
+        ].join("\n"),
+        "utf8",
+      );
+
+      const parsed = parseCfnYaml(fs.readFileSync(serverlessPath, "utf8"));
+      const model = adaptServerlessConfig(parsed, serverlessPath);
+      expect(model.functions.hello.environment?.MY_LABEL).toBe("correct-label");
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+    }
+  });
+
+  test("throws on true circular self-references after convergence", () => {
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "yamlcdk-true-cycle-"));
+    try {
+      const serverlessPath = path.join(tmpDir, "serverless.yml");
+      fs.writeFileSync(
+        serverlessPath,
+        [
+          "service: demo",
+          "provider:",
+          "  name: aws",
+          "custom:",
+          "  a: ${self:custom.b}",
+          "  b: ${self:custom.a}",
+          "functions:",
+          "  hello:",
+          "    handler: src/hello.handler",
+        ].join("\n"),
+        "utf8",
+      );
+
+      const parsed = parseCfnYaml(fs.readFileSync(serverlessPath, "utf8"));
+      expect(() => adaptServerlessConfig(parsed, serverlessPath)).toThrow(
+        /Unable to resolve variable/,
+      );
+    } finally {
       fs.rmSync(tmpDir, { recursive: true, force: true });
     }
   });

@@ -4,7 +4,7 @@ import * as iam from "aws-cdk-lib/aws-iam";
 import * as lambda from "aws-cdk-lib/aws-lambda";
 import { withStageName } from "../stack/helpers.js";
 import { normalizeManagedResourceRef } from "../resource-refs.js";
-import { DYNAMODB_CONFIG } from "../plugins/native-domain-configs.js";
+import { DYNAMODB_CONFIG } from "../plugins/index.js";
 import type { DomainPlugin } from "../plugins/index.js";
 
 function attrType(
@@ -42,7 +42,7 @@ export const dynamodbDomain: DomainPlugin = {
       const streamView = table.stream
         ? STREAM_VIEW_MAP[table.stream]
         : undefined;
-      ctx.refs[name] = new dynamodb.Table(ctx.stack, `Table${name}`, {
+      const tableResource = new dynamodb.Table(ctx.stack, `Table${name}`, {
         tableName: withStageName(name, ctx.model.provider.stage),
         partitionKey: {
           name: table.partitionKey.name,
@@ -61,6 +61,9 @@ export const dynamodbDomain: DomainPlugin = {
         removalPolicy: toDynamoRemovalPolicy(table.removalPolicy),
         stream: streamView,
       });
+      ctx.refs[name] = tableResource;
+      ctx.availableOutputs.set(`${name}TableArn`, tableResource.tableArn);
+      ctx.availableOutputs.set(`${name}TableName`, tableResource.tableName);
     }
   },
 

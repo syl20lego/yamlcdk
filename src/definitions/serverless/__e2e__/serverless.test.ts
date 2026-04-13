@@ -277,5 +277,128 @@ resources:
       template.resourceCountIs("AWS::CloudFront::Distribution", 1);
       template.hasOutput("DistributionApiDistributionDomainName", {});
     });
+
+    test("preserves intrinsic DomainName for CloudFront origins", () => {
+      const { template } = buildDefinitionFromYaml(
+        `
+service: demo
+provider:
+  name: aws
+  stage: dev
+  region: us-east-1
+resources:
+  Resources:
+    ApiDistribution:
+      Type: AWS::CloudFront::Distribution
+      Properties:
+        DistributionConfig:
+          Origins:
+            - Id: apiOrigin
+              DomainName:
+                Fn::Select:
+                  - "2"
+                  - Fn::Split:
+                      - "/"
+                      - Fn::ImportValue: external-endpoint
+              CustomOriginConfig:
+                HTTPSPort: 443
+                OriginProtocolPolicy: https-only
+          DefaultCacheBehavior:
+            TargetOriginId: apiOrigin
+            ViewerProtocolPolicy: redirect-to-https
+          Enabled: true
+`,
+        "serverless.yml",
+      );
+
+      template.hasResourceProperties(
+        "AWS::CloudFront::Distribution",
+        Match.objectLike({
+          DistributionConfig: Match.objectLike({
+            Origins: Match.arrayWith([
+              Match.objectLike({
+                DomainName: {
+                  "Fn::Select": [
+                    "2",
+                    {
+                      "Fn::Split": [
+                        "/",
+                        { "Fn::ImportValue": "external-endpoint" },
+                      ],
+                    },
+                  ],
+                },
+              }),
+            ]),
+          }),
+        }),
+      );
+    });
+  });
+
+  describe("passthrough outputs (resources.Outputs)", () => {
+    test("emits user-defined outputs with intrinsic function values and exports", () => {
+      const { template } = buildDefinitionFromYaml(
+        `
+service: demo
+provider:
+  name: aws
+  stage: dev
+  region: us-east-1
+functions:
+  hello:
+    handler: src/hello.handler
+resources:
+  Outputs:
+    ServiceEndpoint:
+      Value: !GetAtt HelloLambdaFunction.Arn
+      Export:
+        Name: demo-service-endpoint
+    StaticOutput:
+      Value: hello-world
+      Description: A simple static output
+`,
+        "serverless.yml",
+      );
+
+      template.hasOutput("ServiceEndpoint", {
+        Value: { "Fn::GetAtt": ["HelloLambdaFunction", "Arn"] },
+        Export: { Name: "demo-service-endpoint" },
+      });
+      template.hasOutput("StaticOutput", {
+        Value: "hello-world",
+        Description: "A simple static output",
+      });
+    });
+
+    test("auto-fills output Value when only Export is defined and REST API exists", () => {
+      const { template } = buildDefinitionFromYaml(
+        `
+service: demo
+provider:
+  name: aws
+  stage: dev
+  region: us-east-1
+functions:
+  hello:
+    handler: src/hello.handler
+    events:
+      - http:
+          method: GET
+          path: /hello
+resources:
+  Outputs:
+    ServiceEndpoint:
+      Export:
+        Name: demo-service-endpoint
+`,
+        "serverless.yml",
+      );
+
+      const outputs = template.toJSON().Outputs;
+      expect(outputs.ServiceEndpoint).toBeDefined();
+      expect(outputs.ServiceEndpoint.Export.Name).toBe("demo-service-endpoint");
+      expect(outputs.ServiceEndpoint.Value).toBeDefined();
+    });
   });
 });

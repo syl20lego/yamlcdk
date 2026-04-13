@@ -52,7 +52,7 @@ export const s3Domain: DomainPlugin = {
 
     for (const [name, bucket] of Object.entries(config.buckets)) {
       const autoDeleteObjects = bucket.autoDeleteObjects ?? false;
-      ctx.refs[name] = new s3.Bucket(ctx.stack, `Bucket${name}`, {
+      const bucketResource = new s3.Bucket(ctx.stack, `Bucket${name}`, {
         bucketName: withStageName(name.toLowerCase(), ctx.model.provider.stage),
         versioned: bucket.versioned ?? false,
         removalPolicy: autoDeleteObjects
@@ -60,6 +60,9 @@ export const s3Domain: DomainPlugin = {
           : cdk.RemovalPolicy.RETAIN,
         autoDeleteObjects,
       });
+      ctx.refs[name] = bucketResource;
+      ctx.availableOutputs.set(`${name}BucketArn`, bucketResource.bucketArn);
+      ctx.availableOutputs.set(`${name}BucketName`, bucketResource.bucketName);
     }
   },
 

@@ -2,11 +2,20 @@ import fs from "node:fs";
 import path from "node:path";
 
 const SUPPORTED_VARIABLE_SOURCES = new Set(["self", "opt", "sls", "aws", "file", "env"]);
+const MAX_RESOLUTION_PASSES = 10;
+const DEFERRED = Symbol("deferred");
 
 type VariableOutcome =
   | { type: "value"; value: unknown }
   | { type: "skip" }
-  | { type: "missing" };
+  | { type: "missing" }
+  | { type: "deferred" };
+
+interface PassState {
+  strict: boolean;
+  changedCount: number;
+  unresolvedCount: number;
+}
 
 interface TemplateTextPart {
   type: "text";
@@ -340,13 +349,16 @@ export function resolveDefinitionVariables(
   input: unknown,
   options: ResolveDefinitionVariablesOptions,
 ): unknown {
-  const resolvedFileCache = new Map<string, unknown>();
-  const inProgressFiles = new Set<string>();
+  const parsedFileCache = new Map<string, unknown>();
+  let resolvedFileCache = new Map<string, unknown>();
+  let inProgressFiles = new Set<string>();
   const entryFilePath = path.resolve(
     options.entryFilePath ?? path.join(process.cwd(), "definition.yml"),
   );
 
   loadDotEnvFiles(entryFilePath, options.stage);
+
+  let passState: PassState = { strict: false, changedCount: 0, unresolvedCount: 0 };
 
   const resolveDocument = (
     root: unknown,
@@ -355,13 +367,12 @@ export function resolveDefinitionVariables(
   ): unknown => {
     const pathCache = new Map<string, unknown>();
     const inProgressPaths = new Set<string>();
+    const resolveStringGuard = new Set<string>();
 
     const resolvePath = (dottedPath: string): unknown => {
       if (pathCache.has(dottedPath)) return pathCache.get(dottedPath);
       if (inProgressPaths.has(dottedPath)) {
-        throw new Error(
-          `Circular variable reference detected at "${dottedPath}" in "${currentFilePath}".`,
-        );
+        return DEFERRED;
       }
 
       inProgressPaths.add(dottedPath);
@@ -372,13 +383,21 @@ export function resolveDefinitionVariables(
         resolvedValue = rootResolvePath(dottedPath);
       }
 
-      if (resolvedValue === undefined && dottedPath.includes(".")) {
+      if (
+        (resolvedValue === undefined || resolvedValue === DEFERRED) &&
+        dottedPath.includes(".")
+      ) {
         const segments = dottedPath.split(".").filter(Boolean);
         for (let splitIndex = segments.length - 1; splitIndex > 0; splitIndex -= 1) {
           const prefixPath = segments.slice(0, splitIndex).join(".");
           const suffixPath = segments.slice(splitIndex).join(".");
           const prefixValue = resolvePath(prefixPath);
-          if (prefixValue === undefined) continue;
+          if (prefixValue === undefined || prefixValue === DEFERRED) {
+            if (prefixValue === DEFERRED && resolvedValue !== DEFERRED) {
+              resolvedValue = DEFERRED;
+            }
+            continue;
+          }
           const suffixValue = getPathValue(prefixValue, suffixPath);
           if (suffixValue === undefined) continue;
           resolvedValue = resolveNode(suffixValue, dottedPath);
@@ -397,15 +416,19 @@ export function resolveDefinitionVariables(
         return resolvedFileCache.get(normalizedPath);
       }
       if (inProgressFiles.has(normalizedPath)) {
-        throw new Error(
-          `Circular file variable reference detected at "${normalizedPath}".`,
-        );
+        return DEFERRED;
       }
 
       inProgressFiles.add(normalizedPath);
       try {
-        const content = fs.readFileSync(normalizedPath, "utf8");
-        const parsed = options.parseContent(content, normalizedPath);
+        let parsed: unknown;
+        if (parsedFileCache.has(normalizedPath)) {
+          parsed = parsedFileCache.get(normalizedPath);
+        } else {
+          const content = fs.readFileSync(normalizedPath, "utf8");
+          parsed = options.parseContent(content, normalizedPath);
+          parsedFileCache.set(normalizedPath, parsed);
+        }
         const resolved = resolveDocument(
           parsed,
           normalizedPath,
@@ -445,6 +468,7 @@ export function resolveDefinitionVariables(
         }
 
         const nestedOutcome = resolveVariableExpression(part.value, currentPath);
+        if (nestedOutcome.type === "deferred") return nestedOutcome;
         if (nestedOutcome.type === "missing") return nestedOutcome;
         if (nestedOutcome.type === "skip") {
           result += `\${${part.value}}`;
@@ -470,7 +494,9 @@ export function resolveDefinitionVariables(
       }
 
       if (source === "self") {
-        return { type: "value", value: resolvePath(address) };
+        const result = resolvePath(address);
+        if (result === DEFERRED) return { type: "deferred" };
+        return { type: "value", value: result };
       }
 
       if (source === "opt") {
@@ -489,13 +515,13 @@ export function resolveDefinitionVariables(
 
       if (source === "sls") {
         if (address === "stage") {
-          return {
-            type: "value",
-            value: resolvePath("provider.stage") ?? "dev",
-          };
+          const stage = resolvePath("provider.stage");
+          if (stage === DEFERRED) return { type: "deferred" };
+          return { type: "value", value: stage ?? "dev" };
         }
         if (address === "service") {
           const service = resolvePath("service");
+          if (service === DEFERRED) return { type: "deferred" };
           if (typeof service === "string") return { type: "value", value: service };
           if (
             service &&
@@ -514,17 +540,18 @@ export function resolveDefinitionVariables(
 
       if (source === "aws") {
         if (address === "region") {
+          const region = resolvePath("provider.region");
+          if (region === DEFERRED) return { type: "deferred" };
           return {
             type: "value",
-            value:
-              resolvePath("provider.region") ??
-              process.env.AWS_REGION ??
-              "us-east-1",
+            value: region ?? process.env.AWS_REGION ?? "us-east-1",
           };
         }
         if (address === "accountId") {
+          const account = resolvePath("provider.account");
+          if (account === DEFERRED) return { type: "deferred" };
           const accountId =
-            resolvePath("provider.account") ??
+            account ??
             process.env.AWS_ACCOUNT_ID ??
             process.env.CDK_DEFAULT_ACCOUNT;
           return accountId !== undefined
@@ -572,6 +599,7 @@ export function resolveDefinitionVariables(
           relativeFilePath,
         );
         const resolvedFile = resolveFileDocument(absoluteFilePath);
+        if (resolvedFile === DEFERRED) return { type: "deferred" };
         if (resolvedFile === undefined) return { type: "missing" };
         if (!selectorPath) return { type: "missing" };
 
@@ -592,12 +620,16 @@ export function resolveDefinitionVariables(
       if (prepared.type !== "value") return prepared;
 
       let sawSupportedSource = false;
+      let sawDeferred = false;
       for (const alternative of splitTopLevel(
         String(prepared.value),
         ",",
       )) {
         const literal = parseLiteralVariableToken(alternative);
-        if (literal !== undefined) return { type: "value", value: literal };
+        if (literal !== undefined) {
+          if (sawDeferred) continue;
+          return { type: "value", value: literal };
+        }
 
         const token = parseVariableToken(alternative);
         if (!token) continue;
@@ -612,14 +644,31 @@ export function resolveDefinitionVariables(
         if (SUPPORTED_VARIABLE_SOURCES.has(token.source)) {
           sawSupportedSource = true;
         }
+        if (outcome.type === "deferred") {
+          sawDeferred = true;
+          continue;
+        }
         if (outcome.type === "value" && outcome.value !== undefined) return outcome;
         if (outcome.type === "skip") continue;
       }
 
+      if (sawDeferred) return { type: "deferred" };
       return sawSupportedSource ? { type: "missing" } : { type: "skip" };
     };
 
     const resolveString = (value: string, currentPath: string): unknown => {
+      if (resolveStringGuard.has(value)) {
+        if (passState.strict) {
+          throw new Error(
+            `Unable to resolve variable "${value}" at "${currentPath}" in "${currentFilePath}".`,
+          );
+        }
+        passState.unresolvedCount++;
+        return value;
+      }
+      resolveStringGuard.add(value);
+
+      try {
       const parts = splitTemplateParts(value);
       if (
         parts.length === 1 &&
@@ -628,16 +677,25 @@ export function resolveDefinitionVariables(
         value.endsWith("}")
       ) {
         const outcome = resolveVariableExpression(parts[0].value, currentPath);
-        if (outcome.type === "value") return resolveNode(outcome.value, currentPath);
-        if (outcome.type === "missing") {
-          throw new Error(
-            `Unable to resolve variable "${value}" at "${currentPath}" in "${currentFilePath}".`,
-          );
+        if (outcome.type === "value") {
+          passState.changedCount++;
+          return resolveNode(outcome.value, currentPath);
+        }
+        if (outcome.type === "missing" || outcome.type === "deferred") {
+          if (passState.strict) {
+            throw new Error(
+              `Unable to resolve variable "${value}" at "${currentPath}" in "${currentFilePath}".`,
+            );
+          }
+          passState.unresolvedCount++;
+          return value;
         }
         return value;
       }
 
       let result = "";
+      let hasChange = false;
+      let hasUnresolved = false;
       for (const part of parts) {
         if (part.type === "text") {
           result += part.value;
@@ -649,18 +707,30 @@ export function resolveDefinitionVariables(
           result += `\${${part.value}}`;
           continue;
         }
-        if (outcome.type === "missing") {
-          throw new Error(
-            `Unable to resolve variable "\${${part.value}}" at "${currentPath}" in "${currentFilePath}".`,
-          );
+        if (outcome.type === "missing" || outcome.type === "deferred") {
+          if (passState.strict) {
+            throw new Error(
+              `Unable to resolve variable "\${${part.value}}" at "${currentPath}" in "${currentFilePath}".`,
+            );
+          }
+          result += `\${${part.value}}`;
+          hasUnresolved = true;
+          continue;
         }
         result += toScalarString(
           outcome.value,
           `Variable "\${${part.value}}" at "${currentPath}"`,
         );
+        hasChange = true;
       }
 
+      if (hasChange) passState.changedCount++;
+      if (hasUnresolved) passState.unresolvedCount++;
+
       return result;
+      } finally {
+        resolveStringGuard.delete(value);
+      }
     };
 
     const resolveNode = (value: unknown, currentPath: string): unknown => {
@@ -684,5 +754,22 @@ export function resolveDefinitionVariables(
     return resolveNode(root, "$");
   };
 
-  return resolveDocument(input, entryFilePath);
+  // Multi-pass fixed-point resolution loop
+  let document = input;
+  for (let pass = 0; pass < MAX_RESOLUTION_PASSES; pass++) {
+    passState = { strict: false, changedCount: 0, unresolvedCount: 0 };
+    resolvedFileCache = new Map();
+    inProgressFiles = new Set();
+
+    document = resolveDocument(document, entryFilePath);
+
+    if (passState.unresolvedCount === 0) return document;
+    if (passState.changedCount === 0) break;
+  }
+
+  // Strict final pass for error reporting on unresolved variables
+  passState = { strict: true, changedCount: 0, unresolvedCount: 0 };
+  resolvedFileCache = new Map();
+  inProgressFiles = new Set();
+  return resolveDocument(document, entryFilePath);
 }

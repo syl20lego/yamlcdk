@@ -99,7 +99,10 @@ export const originRequestPolicySchema = z.object({
 
 export const distributionOriginSchema = z.object({
   id: z.string().min(1),
-  domainName: z.string().min(1),
+  domainName: z.union([
+    z.string().min(1),
+    z.record(z.string(), z.unknown()),
+  ]),
   httpPort: z.number().int().min(1).max(65535).optional(),
   httpsPort: z.number().int().min(1).max(65535).optional(),
   originProtocolPolicy: z

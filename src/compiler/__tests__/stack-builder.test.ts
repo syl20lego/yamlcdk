@@ -2,6 +2,8 @@ import { describe, expect, test } from "vitest";
 import { buildApp } from "../stack-builder.js";
 import { normalizeConfig } from "../../config/normalize.js";
 import { validateServiceConfig } from "../../config/schema.js";
+import { parseServiceModel } from "../model.js";
+import { DomainConfigs } from "../plugins/domain-configs.js";
 
 describe("compiler", () => {
   test("synthesizes a cross-domain stack with core resources", () => {
@@ -331,32 +333,97 @@ describe("compiler", () => {
     );
   });
 
-  test("rejects cloudFormationServiceRoleArn with deployment role overrides", () => {
-    const config = normalizeConfig(
-      validateServiceConfig({
-        service: "demo",
-        provider: {
-          account: "123456789012",
-          region: "us-east-1",
-          deployment: {
-            cloudFormationServiceRoleArn:
-              "arn:aws:iam::123456789012:role/MyCloudFormationServiceRole",
-            deployRoleArn: "arn:aws:iam::123456789012:role/MyDeployRole",
-          },
+  test("emits passthrough outputs in synthesized template", () => {
+    const model = parseServiceModel({
+      service: "demo",
+      stackName: "demo-dev",
+      provider: { region: "us-east-1", stage: "dev" },
+      functions: {
+        hello: {
+          handler: "src/hello.handler",
+          events: [],
         },
-        functions: {
-          hello: {
-            handler: "src/hello.handler",
-            build: {
-              mode: "none",
-            },
-          },
+      },
+      iam: { statements: {} },
+      domainConfigs: new DomainConfigs(),
+      passthroughOutputs: {
+        ServiceEndpoint: {
+          Value: { "Fn::Sub": "https://${AWS::StackName}.example.com" },
+          Export: { Name: "my-service-endpoint" },
         },
-      }),
-    );
+        StaticValue: {
+          Value: "hello-world",
+          Description: "A static output",
+        },
+      },
+    });
 
-    expect(() => buildApp(config)).toThrow(
-      "cloudFormationServiceRoleArn cannot be combined with deployRoleArn/cloudFormationExecutionRoleArn",
+    const { app } = buildApp(model, { stubBuild: true });
+    const assembly = app.synth();
+    const stackArtifact = assembly.getStackArtifact("demo-dev");
+    const outputs = stackArtifact.template.Outputs;
+
+    expect(outputs).toHaveProperty("ServiceEndpoint");
+    expect(outputs.ServiceEndpoint.Value).toEqual({
+      "Fn::Sub": "https://${AWS::StackName}.example.com",
+    });
+    expect(outputs.ServiceEndpoint.Export).toEqual({ Name: "my-service-endpoint" });
+    expect(outputs).toHaveProperty("StaticValue");
+    expect(outputs.StaticValue.Value).toBe("hello-world");
+    expect(outputs.StaticValue.Description).toBe("A static output");
+  });
+
+  test("rejects passthrough output without Value when name is not in available outputs", () => {
+    const model = parseServiceModel({
+      service: "demo",
+      stackName: "demo-dev",
+      provider: { region: "us-east-1", stage: "dev" },
+      functions: {
+        hello: { handler: "src/hello.handler", events: [] },
+      },
+      iam: { statements: {} },
+      domainConfigs: new DomainConfigs(),
+      passthroughOutputs: {
+        UnknownOutput: {
+          Export: { Name: "my-export" },
+        },
+      },
+    });
+
+    expect(() => buildApp(model, { stubBuild: true })).toThrow(
+      'Output "UnknownOutput" is missing a required "Value" property and does not match',
     );
+  });
+
+  test("auto-fills passthrough output Value from domain availableOutputs", () => {
+    const model = parseServiceModel({
+      service: "demo",
+      stackName: "demo-dev",
+      provider: { region: "us-east-1", stage: "dev" },
+      functions: {
+        hello: {
+          handler: "src/hello.handler",
+          events: [
+            { type: "rest", method: "GET", path: "/hello", apiKeyRequired: false },
+          ],
+        },
+      },
+      iam: { statements: {} },
+      domainConfigs: new DomainConfigs(),
+      passthroughOutputs: {
+        ServiceEndpoint: {
+          Export: { Name: "my-api-endpoint" },
+        },
+      },
+    });
+
+    const { app } = buildApp(model, { stubBuild: true });
+    const assembly = app.synth();
+    const stackArtifact = assembly.getStackArtifact("demo-dev");
+    const outputs = stackArtifact.template.Outputs;
+
+    expect(outputs.ServiceEndpoint).toBeDefined();
+    expect(outputs.ServiceEndpoint.Export.Name).toBe("my-api-endpoint");
+    expect(outputs.ServiceEndpoint.Value).toBeDefined();
   });
 });

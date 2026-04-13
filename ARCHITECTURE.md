@@ -303,7 +303,7 @@ The load stage has multiple sub-steps. For the **yamlcdk format**:
 
 1. `loadRawConfig()` reads YAML and immediately calls `resolveDefinitionVariables()` from `src/definitions/variables/resolve.ts`, which:
    - loads `.env` and `.env.{stage}` files from the YAML file's directory into `process.env` (OS environment takes precedence)
-   - resolves `${self:...}`, `${opt:...}`, `${sls:...}`, `${aws:...}`, `${env:...}`, and `${file(...):...}` expressions
+   - resolves `${self:...}`, `${opt:...}`, `${sls:...}`, `${aws:...}`, `${env:...}`, and `${file(...):...}` expressions using a **multi-pass fixed-point loop** (up to 10 passes) that handles cross-file dependency chains where imported files reference parent context that hasn't fully materialized yet
 2. `validateServiceConfig()` from `src/config/schema.ts` validates the resolved config.
 3. `normalizeConfig()` fills defaults such as:
    - `provider.stage` defaulting to `"dev"`
@@ -326,7 +326,7 @@ For the **CloudFormation format**, the load stage differs:
 For the **Serverless format**, the load stage differs again:
 
 1. `parseCfnYaml()` parses `serverless.yml`/`serverless.yaml`.
-2. `resolveServerlessVariables()` delegates to `resolveDefinitionVariables()` to resolve supported `${...}` expressions (including `opt`, `env`, and `file(...)` patterns).
+2. `resolveServerlessVariables()` delegates to `resolveDefinitionVariables()` to resolve supported `${...}` expressions (including `opt`, `env`, and `file(...)` patterns). The resolver uses multi-pass convergence so cross-file `self:` back-references resolve correctly.
 3. `adaptServerlessConfig()` maps supported top-level Serverless config and events into `ServiceModel`.
 4. If `resources.Resources`/`resources.Outputs` are present, they are adapted through `adaptCfnTemplate()` and merged with the top-level Serverless adaptation.
 5. `loadModel()` returns the parsed model.
@@ -603,7 +603,7 @@ src/
 │   │   ├── plugin.ts               # cloudformationDefinitionPlugin
 │   │   └── index.ts                # Re-exports
 │   └── variables/
-│       └── resolve.ts              # Definition variable resolution (`opt`, `env`, `file`, ...)
+│       └── resolve.ts              # Multi-pass definition variable resolution (`opt`, `env`, `file`, ...)
 ├── compiler/
 │   ├── model.ts                    # Canonical ServiceModel and event/function schemas
 │   ├── stack-builder.ts            # buildApp() + ServiceStack lifecycle orchestration

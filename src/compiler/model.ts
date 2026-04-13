@@ -12,21 +12,19 @@
  */
 
 import { z } from "zod";
-import { DomainConfigs } from "./plugins/domain-configs.js";
+import { DomainConfigs } from "./plugins/index.js";
 import { deploymentConfigSchema as sharedDeploymentConfigSchema } from "../schema/deployment.js";
 import { iamStatementSchema as sharedIamStatementSchema } from "../schema/iam.js";
 import { buildConfigSchema as sharedBuildConfigSchema } from "../schema/build.js";
 import {
   functionUrlAuthTypeSchema as sharedFunctionUrlAuthTypeSchema,
   functionUrlCorsSchema as sharedFunctionUrlCorsSchema,
-  functionUrlHttpMethodSchema as sharedFunctionUrlHttpMethodSchema,
   functionUrlInvokeModeSchema as sharedFunctionUrlInvokeModeSchema,
 } from "../schema/function-url.js";
 
 // ─── Deployment ─────────────────────────────────────────────
 
 export const deploymentConfigSchema = sharedDeploymentConfigSchema;
-export type DeploymentConfig = z.infer<typeof deploymentConfigSchema>;
 
 // ─── Provider ───────────────────────────────────────────────
 
@@ -44,29 +42,23 @@ export type ProviderConfig = z.infer<typeof providerConfigSchema>;
 // ─── IAM ────────────────────────────────────────────────────
 
 export const iamStatementSchema = sharedIamStatementSchema;
-export type IamStatement = z.infer<typeof iamStatementSchema>;
 
 export const iamConfigSchema = z.object({
   statements: z.record(z.string(), iamStatementSchema),
 });
 
-export type IamConfig = z.infer<typeof iamConfigSchema>;
 
 // ─── Functions ──────────────────────────────────────────────
 
 export const buildConfigSchema = sharedBuildConfigSchema;
-export type BuildConfig = z.infer<typeof buildConfigSchema>;
 
 export const functionUrlAuthTypeSchema = sharedFunctionUrlAuthTypeSchema;
-export type FunctionUrlAuthType = z.infer<typeof functionUrlAuthTypeSchema>;
 
 export const functionUrlInvokeModeSchema = sharedFunctionUrlInvokeModeSchema;
 export type FunctionUrlInvokeMode = z.infer<typeof functionUrlInvokeModeSchema>;
 
-export const functionUrlHttpMethodSchema = sharedFunctionUrlHttpMethodSchema;
 
 export const functionUrlCorsSchema = sharedFunctionUrlCorsSchema;
-export type FunctionUrlCorsConfig = z.infer<typeof functionUrlCorsSchema>;
 
 export const functionUrlConfigSchema = z.object({
   authType: functionUrlAuthTypeSchema,
@@ -162,6 +154,7 @@ export const serviceModelSchema = z.object({
   provider: providerConfigSchema,
   functions: z.record(z.string(), functionModelSchema),
   iam: iamConfigSchema,
+  passthroughOutputs: z.record(z.string(), z.record(z.string(), z.unknown())).optional(),
 });
 
 /** Serializable portion of the service model (no domainConfigs). */

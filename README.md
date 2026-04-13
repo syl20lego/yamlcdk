@@ -212,7 +212,7 @@ iam:
 - `tags` - extra stack tags
 - `s3.cleanupRoleArn` - required if any S3 bucket enables `autoDeleteObjects: true`
 - `restApi.apiKeyRequired` - require API keys on all REST API routes
-- `restApi.cloudWatchRoleArn` - use an existing API Gateway CloudWatch role
+- `restApi.cloudWatchRoleArn` - use an existing API Gateway CloudWatch role (yamlcdk does not create one by default)
 - `deployment` - advanced deployment overrides
 
 Example:

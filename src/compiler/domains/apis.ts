@@ -3,7 +3,7 @@ import * as apigw from "aws-cdk-lib/aws-apigateway";
 import * as apigwv2 from "aws-cdk-lib/aws-apigatewayv2";
 import * as apigwv2Integrations from "aws-cdk-lib/aws-apigatewayv2-integrations";
 import { withStageName } from "../stack/helpers.js";
-import { APIS_CONFIG } from "../plugins/native-domain-configs.js";
+import { APIS_CONFIG } from "../plugins/index.js";
 import type { DomainPlugin } from "../plugins/index.js";
 
 export const apisDomain: DomainPlugin = {
@@ -37,7 +37,8 @@ export const apisDomain: DomainPlugin = {
               ctx.model.provider.stage,
             ),
             deployOptions: { stageName: ctx.model.provider.stage },
-            cloudWatchRole: providedCloudWatchRoleArn ? false : undefined,
+            // Avoid creating/tagging an IAM role in deploy accounts that may not allow iam:TagRole.
+            cloudWatchRole: false,
           })
         : undefined;
 
@@ -88,11 +89,17 @@ export const apisDomain: DomainPlugin = {
 
     // Outputs
     if (httpApi) {
+      const httpApiUrl = httpApi.url ?? "n/a";
+      ctx.availableOutputs.set("HttpApiUrl", httpApiUrl);
+      ctx.availableOutputs.set("HttpApiId", httpApi.apiId);
       new cdk.CfnOutput(ctx.stack, "HttpApiUrl", {
-        value: httpApi.url ?? "n/a",
+        value: httpApiUrl,
       });
     }
     if (restApi) {
+      ctx.availableOutputs.set("ServiceEndpoint", restApi.url);
+      ctx.availableOutputs.set("RestApiUrl", restApi.url);
+      ctx.availableOutputs.set("RestApiId", restApi.restApiId);
       new cdk.CfnOutput(ctx.stack, "RestApiUrl", {
         value: restApi.url,
       });

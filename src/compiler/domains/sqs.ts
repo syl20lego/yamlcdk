@@ -14,12 +14,15 @@ export const sqsDomain: DomainPlugin = {
     if (!config) return;
 
     for (const [name, queue] of Object.entries(config.queues)) {
-      ctx.refs[name] = new sqs.Queue(ctx.stack, `Queue${name}`, {
+      const queueResource = new sqs.Queue(ctx.stack, `Queue${name}`, {
         queueName: withStageName(name, ctx.model.provider.stage),
         visibilityTimeout: queue.visibilityTimeout
           ? Duration.seconds(queue.visibilityTimeout)
           : undefined,
       });
+      ctx.refs[name] = queueResource;
+      ctx.availableOutputs.set(`${name}QueueUrl`, queueResource.queueUrl);
+      ctx.availableOutputs.set(`${name}QueueArn`, queueResource.queueArn);
     }
   },
 

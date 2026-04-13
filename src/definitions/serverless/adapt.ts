@@ -23,7 +23,7 @@ import {
   type CloudFrontCachePolicyConfig,
   type CloudFrontDistributionConfig,
   type CloudFrontOriginRequestPolicyConfig,
-} from "../../compiler/plugins/native-domain-configs.js";
+} from "../../compiler/plugins/index.js";
 import { adaptCfnTemplate } from "../cloudformation/adapt.js";
 import { parseCfnYaml, resolveLogicalId } from "../cloudformation/cfn-yaml.js";
 import {
@@ -88,13 +88,6 @@ const SERVERLESS_URL_CORS_ALLOW_ALL_HEADERS = [
   "X-Amz-Security-Token",
 ];
 
-const SUPPORTED_SERVERLESS_SOURCES = new Set(["self", "opt", "sls", "aws", "env"]);
-
-type VariableOutcome =
-  | { type: "value"; value: unknown }
-  | { type: "skip" }
-  | { type: "missing" };
-
 function sanitizeName(input: string): string {
   return input.replace(/[^a-zA-Z0-9-]/g, "-").toLowerCase();
 }
@@ -112,57 +105,6 @@ export function toServerlessFunctionLogicalId(functionName: string): string {
   return `${toServerlessLogicalIdSegment(functionName)}LambdaFunction`;
 }
 
-function splitVariableAlternatives(expression: string): string[] {
-  const parts: string[] = [];
-  let current = "";
-  let quote: "'" | '"' | undefined;
-
-  for (const char of expression) {
-    if ((char === "'" || char === '"') && !quote) {
-      quote = char;
-      current += char;
-      continue;
-    }
-    if (char === quote) {
-      quote = undefined;
-      current += char;
-      continue;
-    }
-    if (char === "," && !quote) {
-      parts.push(current.trim());
-      current = "";
-      continue;
-    }
-    current += char;
-  }
-
-  if (current.trim()) parts.push(current.trim());
-  return parts;
-}
-
-function parseLiteralVariableToken(token: string): unknown | undefined {
-  if (
-    (token.startsWith("'") && token.endsWith("'")) ||
-    (token.startsWith('"') && token.endsWith('"'))
-  ) {
-    return token.slice(1, -1);
-  }
-  if (/^-?\d+$/.test(token)) return Number(token);
-  if (token === "true") return true;
-  if (token === "false") return false;
-  if (token === "null") return null;
-  return undefined;
-}
-
-function getPathValue(root: unknown, dottedPath: string): unknown {
-  const segments = dottedPath.split(".").filter(Boolean);
-  let current = root;
-  for (const segment of segments) {
-    if (current === null || typeof current !== "object") return undefined;
-    current = (current as Record<string, unknown>)[segment];
-  }
-  return current;
-}
 
 interface ResolveServerlessVariablesOptions {
   filePath?: string;
@@ -1236,5 +1178,6 @@ export function adaptServerlessConfig(
     functions: mergedFunctions,
     iam: { statements: {} },
     domainConfigs,
+    passthroughOutputs: resourceModel?.passthroughOutputs,
   });
 }

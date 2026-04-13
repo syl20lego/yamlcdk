@@ -1,8 +1,6 @@
 import { Match } from "aws-cdk-lib/assertions";
 import { describe, expect, test } from "vitest";
 import { synthServiceConfig } from "./helpers.js";
-import { DomainConfigs } from "../../plugins/index.js";
-import { CLOUDFRONT_CONFIG } from "../../plugins/native-domain-configs.js";
 import { buildApp } from "../../stack-builder.js";
 import { normalizeConfig } from "../../../config/normalize.js";
 import { validateServiceConfig } from "../../../config/schema.js";
@@ -232,6 +230,85 @@ describe("cloudfront domain e2e", () => {
       template.resourceCountIs("AWS::CloudFront::Distribution", 0);
       template.resourceCountIs("AWS::CloudFront::CachePolicy", 0);
       template.resourceCountIs("AWS::CloudFront::OriginRequestPolicy", 0);
+    });
+  });
+
+  describe("describeValidation", () => {
+    test("includes relevant CloudFront distribution properties", () => {
+      const raw = validateServiceConfig({
+        service: "demo",
+        cdn: {
+          cachePolicies: {},
+          originRequestPolicies: {},
+          distributions: {
+            barcode: {
+              domainNames: ["cdn.example.com"],
+              webAclId: "waf-123",
+              origins: [{ id: "webOrigin", domainName: "example.com" }],
+              defaultBehavior: {
+                targetOriginId: "webOrigin",
+                viewerProtocolPolicy: "redirect-to-https",
+              },
+              additionalBehaviors: [
+                {
+                  pathPattern: "/api/*",
+                  targetOriginId: "webOrigin",
+                  viewerProtocolPolicy: "redirect-to-https",
+                },
+              ],
+            },
+          },
+        },
+      });
+      const config = normalizeConfig(raw);
+      const { stack } = buildApp(config);
+
+      const contribution = stack.validationContributions.find((item) =>
+        item.description?.includes('CloudFront distribution "barcode"'),
+      );
+
+      expect(contribution).toBeDefined();
+      expect(contribution?.properties).toMatchObject({
+        aliases: ["cdn.example.com"],
+        enabled: true,
+        priceClass: "PriceClass_All",
+        httpVersion: "http2",
+        defaultOriginId: "webOrigin",
+        originCount: 1,
+        origins: ["example.com"],
+        additionalBehaviorCount: 1,
+        viewerProtocolPolicy: "redirect-to-https",
+        webAclId: "waf-123",
+      });
+      expect(typeof contribution?.properties?.domainName).toBe("string");
+    });
+
+    test("shows aliases as empty array when not configured", () => {
+      const raw = validateServiceConfig({
+        service: "demo",
+        cdn: {
+          cachePolicies: {},
+          originRequestPolicies: {},
+          distributions: {
+            barcode: {
+              origins: [{ id: "webOrigin", domainName: "example.com" }],
+              defaultBehavior: {
+                targetOriginId: "webOrigin",
+                viewerProtocolPolicy: "redirect-to-https",
+              },
+            },
+          },
+        },
+      });
+      const config = normalizeConfig(raw);
+      const { stack } = buildApp(config);
+
+      const contribution = stack.validationContributions.find((item) =>
+        item.description?.includes('CloudFront distribution "barcode"'),
+      );
+
+      expect(contribution).toBeDefined();
+      expect(contribution?.properties?.aliases).toEqual([]);
     });
   });
 });

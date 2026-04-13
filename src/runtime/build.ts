@@ -50,6 +50,17 @@ function resolveTypeScriptSourcePath(sourceModulePath: string): string {
   return absoluteModulePath;
 }
 
+function findNearestTsconfig(fromDir: string): string | undefined {
+  let dir = fromDir;
+  while (true) {
+    const candidate = path.join(dir, "tsconfig.json");
+    if (fs.existsSync(candidate)) return candidate;
+    const parent = path.dirname(dir);
+    if (parent === dir) return undefined;
+    dir = parent;
+  }
+}
+
 function compileTypeScriptHandler(
   functionName: string,
   sourceHandler: string,
@@ -59,23 +70,41 @@ function compileTypeScriptHandler(
   const outRoot = path.resolve(process.cwd(), ".yamlcdk-build", functionName);
   ensureDir(outRoot);
 
+  const nearestTsconfig = findNearestTsconfig(path.dirname(absSource));
+
+  const tsconfigContent: Record<string, unknown> = {
+    compilerOptions: {
+      module: "commonjs",
+      moduleResolution: "node",
+      skipLibCheck: true,
+      outDir: outRoot,
+      noEmit: false,
+      declaration: false,
+      sourceMap: false,
+    },
+    files: [absSource],
+  };
+  if (nearestTsconfig) {
+    tsconfigContent.extends = nearestTsconfig;
+  } else {
+    (tsconfigContent.compilerOptions as Record<string, unknown>).target = "es2022";
+    (tsconfigContent.compilerOptions as Record<string, unknown>).esModuleInterop = true;
+  }
+
+  const tmpTsconfig = path.join(outRoot, "tsconfig.build.json");
+  fs.writeFileSync(tmpTsconfig, JSON.stringify(tsconfigContent), "utf8");
+
   const result = spawnSync(
     "npx",
-    [
-      "tsc",
-      "--ignoreConfig",
-      absSource,
-      "--module",
-      "commonjs",
-      "--target",
-      "es2022",
-      "--esModuleInterop",
-      "--skipLibCheck",
-      "--outDir",
-      outRoot,
-    ],
+    ["tsc", "--project", tmpTsconfig],
     { encoding: "utf8", cwd: process.cwd() },
   );
+
+  try {
+    fs.unlinkSync(tmpTsconfig);
+  } catch {
+    // Best-effort cleanup
+  }
 
   if (result.status !== 0) {
     throw new Error(

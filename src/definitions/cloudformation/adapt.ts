@@ -9,31 +9,27 @@
 
 import fs from "node:fs";
 import path from "node:path";
+import type {FunctionModel, FunctionUrlConfig, ServiceModel,} from "../../compiler/model.js";
+import {parseServiceModel} from "../../compiler/model.js";
 import type {
-  ServiceModel,
-  FunctionModel,
-  FunctionUrlConfig,
-} from "../../compiler/model.js";
-import { parseServiceModel } from "../../compiler/model.js";
-import { DomainConfigs } from "../../compiler/plugins/index.js";
+  CloudFrontCachePolicyConfig,
+  CloudFrontDistributionConfig,
+  CloudFrontOriginRequestPolicyConfig,
+  DynamoDBTableConfig,
+  S3BucketConfig,
+  SNSSubscriptionConfig,
+  SNSTopicConfig,
+  SQSQueueConfig,
+} from "../../compiler/plugins/index.js";
 import {
-  S3_CONFIG,
-  DYNAMODB_CONFIG,
-  SQS_CONFIG,
-  SNS_CONFIG,
   APIS_CONFIG,
   CLOUDFRONT_CONFIG,
-} from "../../compiler/plugins/native-domain-configs.js";
-import type {
-  S3BucketConfig,
-  DynamoDBTableConfig,
-  SQSQueueConfig,
-  SNSTopicConfig,
-  SNSSubscriptionConfig,
-  CloudFrontCachePolicyConfig,
-  CloudFrontOriginRequestPolicyConfig,
-  CloudFrontDistributionConfig,
-} from "../../compiler/plugins/native-domain-configs.js";
+  DomainConfigs,
+  DYNAMODB_CONFIG,
+  S3_CONFIG,
+  SNS_CONFIG,
+  SQS_CONFIG
+} from "../../compiler/plugins/index.js";
 import {
   createDynamodbStreamEvent,
   createEventBridgeEvent,
@@ -42,7 +38,7 @@ import {
   createSnsEvent,
   createSqsEvent,
 } from "../shared-event-adapters.js";
-import { isCfnRef, resolveLogicalId } from "./cfn-yaml.js";
+import {isCfnRef, resolveLogicalId} from "./cfn-yaml.js";
 
 // ─── CloudFormation template types ──────────────────────────
 
@@ -589,39 +585,37 @@ function wireFunctionUrls(
     }
 
     const cors = p.Cors as Record<string, unknown> | undefined;
-    const urlConfig: FunctionUrlConfig = {
+    functions[fnId].url = {
       authType: (p.AuthType as FunctionUrlConfig["authType"]) ?? "AWS_IAM",
       invokeMode:
-        (p.InvokeMode as FunctionUrlConfig["invokeMode"]) ?? "BUFFERED",
+          (p.InvokeMode as FunctionUrlConfig["invokeMode"]) ?? "BUFFERED",
       cors: cors
-        ? {
+          ? {
             allowCredentials:
-              typeof cors.AllowCredentials === "boolean"
-                ? cors.AllowCredentials
-                : undefined,
+                typeof cors.AllowCredentials === "boolean"
+                    ? cors.AllowCredentials
+                    : undefined,
             allowHeaders: toStringArray(
-              cors.AllowHeaders,
-              `CloudFormation Lambda URL "${logicalId}" CORS AllowHeaders`,
+                cors.AllowHeaders,
+                `CloudFormation Lambda URL "${logicalId}" CORS AllowHeaders`,
             ),
             allowedMethods: toFunctionUrlMethods(
-              cors.AllowMethods,
-              `CloudFormation Lambda URL "${logicalId}" CORS AllowMethods`,
+                cors.AllowMethods,
+                `CloudFormation Lambda URL "${logicalId}" CORS AllowMethods`,
             ),
             allowOrigins: toStringArray(
-              cors.AllowOrigins,
-              `CloudFormation Lambda URL "${logicalId}" CORS AllowOrigins`,
+                cors.AllowOrigins,
+                `CloudFormation Lambda URL "${logicalId}" CORS AllowOrigins`,
             ),
             exposeHeaders: toStringArray(
-              cors.ExposeHeaders,
-              `CloudFormation Lambda URL "${logicalId}" CORS ExposeHeaders`,
+                cors.ExposeHeaders,
+                `CloudFormation Lambda URL "${logicalId}" CORS ExposeHeaders`,
             ),
             maxAge:
-              typeof cors.MaxAge === "number" ? cors.MaxAge : undefined,
+                typeof cors.MaxAge === "number" ? cors.MaxAge : undefined,
           }
-        : undefined,
+          : undefined,
     };
-
-    functions[fnId].url = urlConfig;
   }
 }
 
@@ -808,9 +802,16 @@ function extractDistributions(
         const customOriginConfig = o.CustomOriginConfig as
           | Record<string, unknown>
           | undefined;
+        const rawDomainName = o.DomainName;
+        const domainName =
+          typeof rawDomainName === "string"
+            ? rawDomainName
+            : rawDomainName && typeof rawDomainName === "object"
+              ? (rawDomainName as Record<string, unknown>)
+              : String(rawDomainName ?? "");
         return {
           id: String(o.Id ?? ""),
-          domainName: String(o.DomainName ?? ""),
+          domainName,
           httpPort:
             typeof customOriginConfig?.HTTPPort === "number"
               ? customOriginConfig.HTTPPort
@@ -990,6 +991,11 @@ export function adaptCfnTemplate(
     distributions,
   });
 
+  const passthroughOutputs =
+    template.Outputs && Object.keys(template.Outputs).length > 0
+      ? (template.Outputs as Record<string, Record<string, unknown>>)
+      : undefined;
+
   return parseServiceModel({
     service,
     stackName,
@@ -1004,5 +1010,6 @@ export function adaptCfnTemplate(
     functions,
     iam: { statements: {} },
     domainConfigs: dc,
+    passthroughOutputs,
   });
 }

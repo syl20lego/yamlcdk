@@ -2,13 +2,14 @@ import * as cloudfront from "aws-cdk-lib/aws-cloudfront";
 import * as origins from "aws-cdk-lib/aws-cloudfront-origins";
 import * as acm from "aws-cdk-lib/aws-certificatemanager";
 import cdk from "aws-cdk-lib";
-import { CLOUDFRONT_CONFIG } from "../plugins/native-domain-configs.js";
+import { tryGetLogicalId } from "../stack/helpers.js";
+import { CLOUDFRONT_CONFIG } from "../plugins/index.js";
 import type {
   CloudFrontCachePolicyConfig,
   CloudFrontDistributionConfig,
   CloudFrontOriginRequestPolicyConfig,
-} from "../plugins/native-domain-configs.js";
-import type { DomainPlugin } from "../plugins/index.js";
+} from "../plugins/index.js";
+import type { DomainPlugin, DomainValidationContribution } from "../plugins/index.js";
 
 // UUID pattern — used to detect managed (pre-existing) policy IDs
 const UUID_RE =
@@ -24,7 +25,11 @@ function buildCacheHeaderBehavior(
   if (!config || config.behavior === "none") {
     return cloudfront.CacheHeaderBehavior.none();
   }
-  return cloudfront.CacheHeaderBehavior.allowList(...(config.headers ?? []));
+  // whitelist: if no headers provided, treat as none instead of failing
+  if (!config.headers || config.headers.length === 0) {
+    return cloudfront.CacheHeaderBehavior.none();
+  }
+  return cloudfront.CacheHeaderBehavior.allowList(...config.headers);
 }
 
 function buildCacheCookieBehavior(
@@ -37,9 +42,17 @@ function buildCacheCookieBehavior(
     return cloudfront.CacheCookieBehavior.all();
   }
   if (config.behavior === "allExcept") {
-    return cloudfront.CacheCookieBehavior.denyList(...(config.cookies ?? []));
+    // denyList: if no cookies provided, treat as all instead of failing
+    if (!config.cookies || config.cookies.length === 0) {
+      return cloudfront.CacheCookieBehavior.all();
+    }
+    return cloudfront.CacheCookieBehavior.denyList(...config.cookies);
   }
-  return cloudfront.CacheCookieBehavior.allowList(...(config.cookies ?? []));
+  // whitelist: if no cookies provided, treat as none instead of failing
+  if (!config.cookies || config.cookies.length === 0) {
+    return cloudfront.CacheCookieBehavior.none();
+  }
+  return cloudfront.CacheCookieBehavior.allowList(...config.cookies);
 }
 
 function buildCacheQueryStringBehavior(
@@ -52,13 +65,17 @@ function buildCacheQueryStringBehavior(
     return cloudfront.CacheQueryStringBehavior.all();
   }
   if (config.behavior === "allExcept") {
-    return cloudfront.CacheQueryStringBehavior.denyList(
-      ...(config.queryStrings ?? []),
-    );
+    // denyList: if no queryStrings provided, treat as all instead of failing
+    if (!config.queryStrings || config.queryStrings.length === 0) {
+      return cloudfront.CacheQueryStringBehavior.all();
+    }
+    return cloudfront.CacheQueryStringBehavior.denyList(...config.queryStrings);
   }
-  return cloudfront.CacheQueryStringBehavior.allowList(
-    ...(config.queryStrings ?? []),
-  );
+  // whitelist: if no queryStrings provided, treat as none instead of failing
+  if (!config.queryStrings || config.queryStrings.length === 0) {
+    return cloudfront.CacheQueryStringBehavior.none();
+  }
+  return cloudfront.CacheQueryStringBehavior.allowList(...config.queryStrings);
 }
 
 function buildOriginRequestHeaderBehavior(
@@ -77,9 +94,11 @@ function buildOriginRequestHeaderBehavior(
       ...(config.headers ?? []),
     );
   }
-  return cloudfront.OriginRequestHeaderBehavior.allowList(
-    ...(config.headers ?? []),
-  );
+  // whitelist: if no headers provided, treat as none instead of failing
+  if (!config.headers || config.headers.length === 0) {
+    return cloudfront.OriginRequestHeaderBehavior.none();
+  }
+  return cloudfront.OriginRequestHeaderBehavior.allowList(...config.headers);
 }
 
 function buildOriginRequestCookieBehavior(
@@ -92,13 +111,17 @@ function buildOriginRequestCookieBehavior(
     return cloudfront.OriginRequestCookieBehavior.all();
   }
   if (config.behavior === "allExcept") {
-    return cloudfront.OriginRequestCookieBehavior.denyList(
-      ...(config.cookies ?? []),
-    );
+    // denyList: if no cookies provided, treat as all instead of failing
+    if (!config.cookies || config.cookies.length === 0) {
+      return cloudfront.OriginRequestCookieBehavior.all();
+    }
+    return cloudfront.OriginRequestCookieBehavior.denyList(...config.cookies);
   }
-  return cloudfront.OriginRequestCookieBehavior.allowList(
-    ...(config.cookies ?? []),
-  );
+  // whitelist: if no cookies provided, treat as none instead of failing
+  if (!config.cookies || config.cookies.length === 0) {
+    return cloudfront.OriginRequestCookieBehavior.none();
+  }
+  return cloudfront.OriginRequestCookieBehavior.allowList(...config.cookies);
 }
 
 function buildOriginRequestQueryStringBehavior(
@@ -110,8 +133,12 @@ function buildOriginRequestQueryStringBehavior(
   if (config.behavior === "all") {
     return cloudfront.OriginRequestQueryStringBehavior.all();
   }
+  // whitelist: if no queryStrings provided, treat as none instead of failing
+  if (!config.queryStrings || config.queryStrings.length === 0) {
+    return cloudfront.OriginRequestQueryStringBehavior.none();
+  }
   return cloudfront.OriginRequestQueryStringBehavior.allowList(
-    ...(config.queryStrings ?? []),
+    ...config.queryStrings,
   );
 }
 
@@ -257,11 +284,12 @@ export const cloudfrontDomain: DomainPlugin = {
               }
             : undefined;
 
+        const domainName = cdk.Token.asString(originCfg.domainName);
         originMap.set(
           originCfg.id,
           customOriginProps
-            ? new origins.HttpOrigin(originCfg.domainName, customOriginProps)
-            : new origins.HttpOrigin(originCfg.domainName),
+            ? new origins.HttpOrigin(domainName, customOriginProps)
+            : new origins.HttpOrigin(domainName),
         );
       }
 
@@ -384,5 +412,51 @@ export const cloudfrontDomain: DomainPlugin = {
 
   bind(_ctx, _events) {
     // CloudFront does not participate in Lambda event binding
+  },
+
+  describeValidation(ctx) {
+    const config = ctx.model.domainConfigs.get(CLOUDFRONT_CONFIG);
+    if (!config) return [];
+
+    const contributions: DomainValidationContribution[] = [];
+
+    for (const [name, distConfig] of Object.entries(config.distributions)) {
+      const ref = ctx.refs[name];
+      if (!ref || !(ref instanceof cloudfront.Distribution)) {
+        continue;
+      }
+      const logicalId = tryGetLogicalId(ctx.stack, ref);
+      if (!logicalId) {
+        continue;
+      }
+
+      contributions.push({
+        section: "Resources",
+        logicalId,
+        description: `CloudFront distribution "${name}"`,
+        properties: {
+          domainName: ref.distributionDomainName,
+          aliases: distConfig.domainNames ?? [],
+          enabled: distConfig.enabled ?? true,
+          priceClass: distConfig.priceClass ?? "PriceClass_All",
+          httpVersion: distConfig.httpVersion ?? "http2",
+          defaultOriginId: distConfig.defaultBehavior.targetOriginId,
+          originCount: distConfig.origins.length,
+          origins: distConfig.origins.map((origin) =>
+            cdk.Token.asString(origin.domainName),
+          ),
+          additionalBehaviorCount:
+            distConfig.additionalBehaviors?.length ?? 0,
+          viewerProtocolPolicy:
+            distConfig.defaultBehavior.viewerProtocolPolicy,
+          ...(distConfig.webAclId
+            ? { webAclId: distConfig.webAclId }
+            : {}),
+        },
+        status: "valid",
+      });
+    }
+
+    return contributions;
   },
 };

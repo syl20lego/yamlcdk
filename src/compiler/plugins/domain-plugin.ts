@@ -48,6 +48,12 @@ export interface CompilationContext {
   readonly refs: ResourceRefs;
   /** Pre-computed function build results (keyed by function name). */
   readonly builds: Readonly<Record<string, BuildResult>>;
+  /**
+   * Domain-provided output values (name → CDK token string).
+   * Domains register available outputs here; the stack builder
+   * uses them to auto-fill passthrough outputs missing a Value.
+   */
+  readonly availableOutputs: Map<string, string>;
 }
 
 // ─── Synthesis result ───────────────────────────────────────

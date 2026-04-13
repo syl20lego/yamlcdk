@@ -36,6 +36,21 @@ describe("apis domain e2e", () => {
         ApiKeyRequired: false,
       }),
     );
+    const apiGatewayRoles = template.findResources(
+      "AWS::IAM::Role",
+      Match.objectLike({
+        AssumeRolePolicyDocument: Match.objectLike({
+          Statement: Match.arrayWith([
+            Match.objectLike({
+              Principal: Match.objectLike({
+                Service: "apigateway.amazonaws.com",
+              }),
+            }),
+          ]),
+        }),
+      }),
+    );
+    expect(Object.keys(apiGatewayRoles)).toHaveLength(0);
   });
 
   test("requires REST api keys when the provider-level option is configured", () => {

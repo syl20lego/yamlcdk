@@ -18,6 +18,8 @@ export const snsDomain: DomainPlugin = {
         topicName: withStageName(name, ctx.model.provider.stage),
       });
       ctx.refs[name] = topicResource;
+      ctx.availableOutputs.set(`${name}TopicArn`, topicResource.topicArn);
+      ctx.availableOutputs.set(`${name}TopicName`, topicResource.topicName);
 
       for (const subscription of topic.subscriptions ?? []) {
         if (subscription.type === "sqs") {

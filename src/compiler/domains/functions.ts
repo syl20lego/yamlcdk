@@ -188,11 +188,15 @@ export const functionsDomain: DomainPlugin = {
         role: importedRole,
       });
       ctx.refs[name] = fnResource;
+      ctx.availableOutputs.set(`${name}LambdaFunctionQualifiedArn`, fnResource.functionArn);
+      ctx.availableOutputs.set(`${name}LambdaFunctionArn`, fnResource.functionArn);
 
       if (fn.url) {
         const functionUrl = fnResource.addFunctionUrl(toFunctionUrlOptions(fn.url));
+        const urlValue = functionUrl.url;
+        ctx.availableOutputs.set(`${name}FunctionUrl`, urlValue);
         new cdk.CfnOutput(ctx.stack, `${name}FunctionUrl`, {
-          value: functionUrl.url,
+          value: urlValue,
         });
       }
 
