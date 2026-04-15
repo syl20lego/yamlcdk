@@ -37,6 +37,7 @@ import {
   createSqsEvent,
 } from "../shared-event-adapters.js";
 import { resolveDefinitionVariables } from "../variables/resolve.js";
+import { isCfnIntrinsicEnv, type EnvValue } from "../../schema/cfn-env.js";
 
 interface CfnResource {
   Type: string;
@@ -171,6 +172,34 @@ function optionalStringRecord(
       throw new Error(`${description}.${key} must resolve to a scalar value.`);
     }
     result[key] = String(entry);
+  }
+  return result;
+}
+
+function optionalEnvRecord(
+  value: unknown,
+  description: string,
+): Record<string, EnvValue> | undefined {
+  if (value === undefined) return undefined;
+  if (value === null || typeof value !== "object" || Array.isArray(value)) {
+    throw new Error(`${description} must be an object.`);
+  }
+
+  const result: Record<string, EnvValue> = {};
+  for (const [key, entry] of Object.entries(value as Record<string, unknown>)) {
+    if (
+      typeof entry === "string" ||
+      typeof entry === "number" ||
+      typeof entry === "boolean"
+    ) {
+      result[key] = String(entry);
+    } else if (entry !== null && typeof entry === "object" && isCfnIntrinsicEnv(entry)) {
+      result[key] = entry;
+    } else {
+      throw new Error(
+        `${description}.${key} must be a scalar value or a supported CloudFormation intrinsic (Ref, Fn::GetAtt, Fn::Sub, Fn::Join).`,
+      );
+    }
   }
   return result;
 }
@@ -924,7 +953,7 @@ function adaptTopLevelServerlessConfig(
         runtime,
         timeout: timeout as number | undefined,
         memorySize: memorySize as number | undefined,
-        environment: optionalStringRecord(
+        environment: optionalEnvRecord(
           fn.environment,
           `functions.${name}.environment`,
         ),

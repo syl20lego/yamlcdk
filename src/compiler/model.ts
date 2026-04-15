@@ -21,6 +21,9 @@ import {
   functionUrlCorsSchema as sharedFunctionUrlCorsSchema,
   functionUrlInvokeModeSchema as sharedFunctionUrlInvokeModeSchema,
 } from "../schema/function-url.js";
+import {
+  envValueSchema as sharedEnvValueSchema,
+} from "../schema/cfn-env.js";
 
 // ─── Deployment ─────────────────────────────────────────────
 
@@ -130,7 +133,7 @@ export const functionModelSchema = z.object({
   runtime: z.string().optional(),
   timeout: z.number().int().min(1).max(900).optional(),
   memorySize: z.number().int().min(128).max(10240).optional(),
-  environment: z.record(z.string(), z.string()).optional(),
+  environment: z.record(z.string(), sharedEnvValueSchema).optional(),
   iam: z.array(z.string()).optional(),
   url: functionUrlConfigSchema.optional(),
   build: buildConfigSchema.optional(),

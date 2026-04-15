@@ -233,4 +233,106 @@ describe("functions domain e2e", () => {
       ]),
     );
   });
+
+  test("synthesizes Ref intrinsic environment values into CloudFormation Ref tokens", () => {
+    const { template } = synthServiceConfig({
+      functions: {
+        worker: functionConfig({
+          environment: {
+            QUEUE_URL: { Ref: "JobsQueue" },
+          },
+        }),
+      },
+      messaging: {
+        sqs: { JobsQueue: { visibilityTimeout: 30 } },
+      },
+    });
+
+    template.hasResourceProperties(
+      "AWS::Lambda::Function",
+      Match.objectLike({
+        Environment: {
+          Variables: {
+            QUEUE_URL: Match.objectLike({ Ref: Match.anyValue() }),
+          },
+        },
+      }),
+    );
+  });
+
+  test("synthesizes Fn::GetAtt intrinsic environment values", () => {
+    const { template } = synthServiceConfig({
+      functions: {
+        worker: functionConfig({
+          environment: {
+            TABLE_ARN: { "Fn::GetAtt": ["OrdersTable", "Arn"] },
+          },
+        }),
+      },
+      storage: {
+        dynamodb: {
+          OrdersTable: {
+            partitionKey: { name: "pk", type: "string" },
+          },
+        },
+      },
+    });
+
+    template.hasResourceProperties(
+      "AWS::Lambda::Function",
+      Match.objectLike({
+        Environment: {
+          Variables: {
+            TABLE_ARN: Match.objectLike({ "Fn::GetAtt": Match.anyValue() }),
+          },
+        },
+      }),
+    );
+  });
+
+  test("synthesizes Fn::Sub intrinsic environment values", () => {
+    const { template } = synthServiceConfig({
+      functions: {
+        worker: functionConfig({
+          environment: {
+            COMPOSED: { "Fn::Sub": "arn:aws:sqs:${AWS::Region}:${AWS::AccountId}:my-queue" },
+          },
+        }),
+      },
+    });
+
+    template.hasResourceProperties(
+      "AWS::Lambda::Function",
+      Match.objectLike({
+        Environment: {
+          Variables: {
+            COMPOSED: Match.objectLike({ "Fn::Sub": Match.anyValue() }),
+          },
+        },
+      }),
+    );
+  });
+
+  test("synthesizes Fn::Join intrinsic environment values", () => {
+    const { template } = synthServiceConfig({
+      functions: {
+        worker: functionConfig({
+          environment: {
+            NAME: { "Fn::Join": ["-", ["prefix", { Ref: "AWS::StackName" }]] },
+          },
+        }),
+      },
+    });
+
+    template.hasResourceProperties(
+      "AWS::Lambda::Function",
+      Match.objectLike({
+        Environment: {
+          Variables: {
+            NAME: Match.objectLike({ "Fn::Join": Match.anyValue() }),
+          },
+        },
+      }),
+    );
+  });
 });

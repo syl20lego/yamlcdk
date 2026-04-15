@@ -261,12 +261,30 @@ Useful fields:
 - `handler` - required module path and export, for example `src/handlers/hello.handler`
 - `runtime` - optional Lambda runtime
 - `timeout` / `memorySize` - optional Lambda settings
-- `environment` - optional Lambda environment variables
+- `environment` - optional Lambda environment variables (scalar strings or CloudFormation intrinsics)
 - `iam` - either `iam.statements` keys or a single IAM role ARN
 - `build.mode` - `typescript` (default), `external`, or `none` (skip build, use handler path as-is)
 - `build.command`, `build.cwd`, `build.handler` - external build settings
 - `events` - see the event types below
 - `restApi.apiKeyRequired` - per-function REST API key requirement when the global provider setting is not set
+
+Environment values can be plain strings or CloudFormation intrinsic functions (`Ref`, `Fn::GetAtt`, `Fn::Sub`, `Fn::Join`):
+
+```yaml
+functions:
+  worker:
+    handler: src/worker.handler
+    environment:
+      STAGE: dev
+      QUEUE_URL:
+        Ref: JobsQueue
+      TABLE_ARN:
+        Fn::GetAtt: [OrdersTable, Arn]
+      COMPOSED_ARN:
+        Fn::Sub: "arn:aws:sqs:${AWS::Region}:${AWS::AccountId}:my-queue"
+```
+
+Unsupported object shapes are rejected with an explicit error.
 
 Example external build:
 
@@ -565,7 +583,7 @@ Supported top-level surface today:
 - `service`
 - `provider.name`, `provider.stage`, `provider.region`, `provider.runtime`, `provider.timeout`, `provider.memorySize`, `provider.stackName`, `provider.profile`, `provider.tags`
 - `provider.iam.deploymentRole`, `provider.deploymentBucket.name`
-- `functions.*.handler`, `runtime`, `timeout`, `memorySize`, `environment`, `role`, `url`
+- `functions.*.handler`, `runtime`, `timeout`, `memorySize`, `environment` (including CloudFormation intrinsics like `!Ref`, `!GetAtt`, `!Sub`, `!Join`), `role`, `url`
 - function events: `http`, `httpApi`, `schedule`, `s3`, `sns`, `sqs`, `stream` (DynamoDB only), and `eventBridge`
 - raw `resources.Resources` / `resources.Outputs`
 

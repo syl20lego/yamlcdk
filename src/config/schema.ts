@@ -7,6 +7,7 @@ import {
 import { iamStatementSchema as sharedIamStatementSchema } from "../schema/iam.js";
 import { buildConfigSchema } from "../schema/build.js";
 import { deploymentConfigSchema } from "../schema/deployment.js";
+import { envValueSchema } from "../schema/cfn-env.js";
 import {
   cachePolicySchema,
   distributionSchema,
@@ -32,7 +33,7 @@ export const functionSchema = z.object({
   runtime: runtimeSchema.optional(),
   timeout: z.number().int().min(1).max(900).optional(),
   memorySize: z.number().int().min(128).max(10240).optional(),
-  environment: z.record(z.string(), z.string()).optional(),
+  environment: z.record(z.string(), envValueSchema).optional(),
   iam: z.array(z.string()).optional(),
   url: functionUrlSchema.optional(),
   build: buildConfigSchema.optional(),

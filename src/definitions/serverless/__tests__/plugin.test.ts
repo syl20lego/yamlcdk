@@ -827,6 +827,90 @@ resources:
       ),
     ).toThrow(/conflicts with a Serverless-generated function logical ID/);
   });
+
+  test("accepts Ref and Fn::GetAtt intrinsics in function environment", () => {
+    const model = adaptServerlessConfig(
+      parseCfnYaml(`
+service: demo
+provider:
+  name: aws
+functions:
+  worker:
+    handler: src/worker.handler
+    environment:
+      QUEUE_URL: !Ref JobsQueue
+      TABLE_ARN: !GetAtt OrdersTable.Arn
+      PLAIN: hello
+resources:
+  Resources:
+    JobsQueue:
+      Type: AWS::SQS::Queue
+    OrdersTable:
+      Type: AWS::DynamoDB::Table
+      Properties:
+        AttributeDefinitions:
+          - AttributeName: pk
+            AttributeType: S
+        KeySchema:
+          - AttributeName: pk
+            KeyType: HASH
+`),
+      "serverless.yml",
+    );
+
+    expect(model.functions.worker.environment?.PLAIN).toBe("hello");
+    expect(model.functions.worker.environment?.QUEUE_URL).toEqual({ Ref: "JobsQueue" });
+    expect(model.functions.worker.environment?.TABLE_ARN).toEqual({
+      "Fn::GetAtt": ["OrdersTable", "Arn"],
+    });
+  });
+
+  test("accepts Fn::Sub and Fn::Join intrinsics in function environment", () => {
+    const model = adaptServerlessConfig(
+      parseCfnYaml(`
+service: demo
+provider:
+  name: aws
+functions:
+  worker:
+    handler: src/worker.handler
+    environment:
+      TABLE_ARN: !Sub "arn:aws:dynamodb:\${AWS::Region}:\${AWS::AccountId}:table/orders"
+      COMPOSED: !Join
+        - "-"
+        - - prefix
+          - !Ref Stage
+`),
+      "serverless.yml",
+    );
+
+    expect(model.functions.worker.environment?.TABLE_ARN).toEqual({
+      "Fn::Sub": "arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/orders",
+    });
+    expect(model.functions.worker.environment?.COMPOSED).toEqual({
+      "Fn::Join": ["-", ["prefix", { Ref: "Stage" }]],
+    });
+  });
+
+  test("rejects unsupported object shapes in function environment", () => {
+    expect(() =>
+      adaptServerlessConfig(
+        parseCfnYaml(`
+service: demo
+provider:
+  name: aws
+functions:
+  worker:
+    handler: src/worker.handler
+    environment:
+      BAD_KEY:
+        nested: object
+        not: intrinsic
+`),
+        "serverless.yml",
+      ),
+    ).toThrow(/must be a scalar value or a supported CloudFormation intrinsic/);
+  });
 });
 
 describe("definition registry", () => {

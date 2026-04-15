@@ -118,6 +118,84 @@ functions:
       );
     });
 
+    test("accepts Ref and Fn::GetAtt intrinsic environment values in yamlcdk native config", () => {
+      const { model, template } = buildDefinitionFromYaml(`
+service: intrinsic-env
+functions:
+  worker:
+    handler: src/worker.handler
+    build:
+      mode: none
+    environment:
+      QUEUE_URL:
+        Ref: JobsQueue
+      TABLE_ARN:
+        Fn::GetAtt:
+          - OrdersTable
+          - Arn
+      PLAIN: hello
+messaging:
+  sqs:
+    JobsQueue:
+      visibilityTimeout: 30
+storage:
+  dynamodb:
+    OrdersTable:
+      partitionKey:
+        name: pk
+        type: string
+`);
+
+      expect(model.functions.worker.environment?.PLAIN).toBe("hello");
+      expect(model.functions.worker.environment?.QUEUE_URL).toEqual({ Ref: "JobsQueue" });
+      expect(model.functions.worker.environment?.TABLE_ARN).toEqual({
+        "Fn::GetAtt": ["OrdersTable", "Arn"],
+      });
+      template.hasResourceProperties(
+        "AWS::Lambda::Function",
+        Match.objectLike({
+          Environment: {
+            Variables: {
+              PLAIN: "hello",
+              QUEUE_URL: Match.objectLike({ Ref: Match.anyValue() }),
+              TABLE_ARN: Match.objectLike({ "Fn::GetAtt": Match.anyValue() }),
+            },
+          },
+        }),
+      );
+    });
+
+    test("accepts Fn::Sub and Fn::Join intrinsic environment values in yamlcdk native config", () => {
+      const { template } = buildDefinitionFromYaml(`
+service: intrinsic-env-sub-join
+functions:
+  worker:
+    handler: src/worker.handler
+    build:
+      mode: none
+    environment:
+      TABLE_ARN:
+        Fn::Sub: "arn:aws:dynamodb:\${AWS::Region}:\${AWS::AccountId}:table/orders"
+      COMPOSED:
+        Fn::Join:
+          - "-"
+          - - prefix
+            - Ref: AWS::StackName
+`);
+
+      template.hasResourceProperties(
+        "AWS::Lambda::Function",
+        Match.objectLike({
+          Environment: {
+            Variables: {
+              TABLE_ARN: Match.objectLike({ "Fn::Sub": Match.anyValue() }),
+              COMPOSED: Match.objectLike({ "Fn::Join": Match.anyValue() }),
+            },
+          },
+        }),
+      );
+    });
+
     test("creates a lambda function URL from function url config", () => {
       const { model, template } = buildDefinitionFromYaml(`
 service: function-url

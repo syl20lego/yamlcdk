@@ -17,6 +17,7 @@ import type {
   FunctionUrlConfig,
   FunctionUrlInvokeMode,
 } from "../model.js";
+import type { EnvValue } from "../../schema/cfn-env.js";
 
 type FunctionUrlAllowedMethod = NonNullable<
   NonNullable<FunctionUrlConfig["cors"]>["allowedMethods"]
@@ -139,6 +140,50 @@ function toLambdaRuntime(runtime: string | undefined): lambda.Runtime {
   }
 }
 
+function resolveEnvIntrinsic(value: unknown): string {
+  if (typeof value === "string") return value;
+  if (value !== null && typeof value === "object") {
+    const obj = value as Record<string, unknown>;
+    if ("Ref" in obj && typeof obj.Ref === "string") {
+      return cdk.Fn.ref(obj.Ref);
+    }
+    if ("Fn::GetAtt" in obj) {
+      const parts = obj["Fn::GetAtt"] as [string, string];
+      return cdk.Token.asString(cdk.Fn.getAtt(parts[0], parts[1]));
+    }
+    if ("Fn::Sub" in obj) {
+      const sub = obj["Fn::Sub"];
+      if (typeof sub === "string") return cdk.Fn.sub(sub);
+      const [template, vars] = sub as [string, Record<string, unknown>];
+      const resolvedVars: Record<string, string> = {};
+      for (const [k, v] of Object.entries(vars)) {
+        resolvedVars[k] = resolveEnvIntrinsic(v);
+      }
+      return cdk.Fn.sub(template, resolvedVars);
+    }
+    if ("Fn::Join" in obj) {
+      const [separator, parts] = obj["Fn::Join"] as [string, unknown[]];
+      return cdk.Fn.join(separator, parts.map((p) => resolveEnvIntrinsic(p)));
+    }
+  }
+  throw new Error(`Unsupported environment variable intrinsic: ${JSON.stringify(value)}`);
+}
+
+function resolveEnvValue(value: EnvValue): string {
+  if (typeof value === "string") return value;
+  return resolveEnvIntrinsic(value);
+}
+
+function resolveEnvRecord(
+  env: Record<string, EnvValue>,
+): Record<string, string> {
+  const result: Record<string, string> = {};
+  for (const [key, value] of Object.entries(env)) {
+    result[key] = resolveEnvValue(value);
+  }
+  return result;
+}
+
 export const functionsDomain: DomainPlugin = {
   name: "functions",
 
@@ -184,7 +229,7 @@ export const functionsDomain: DomainPlugin = {
           : lambda.Code.fromAsset(build.assetPath),
         timeout: Duration.seconds(fn.timeout ?? 30),
         memorySize: fn.memorySize ?? 256,
-        environment: fn.environment ? { ...fn.environment } : undefined,
+        environment: fn.environment ? resolveEnvRecord(fn.environment) : undefined,
         role: importedRole,
       });
       ctx.refs[name] = fnResource;
