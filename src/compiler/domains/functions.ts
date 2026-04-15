@@ -1,6 +1,10 @@
 import cdk, { Duration } from "aws-cdk-lib";
+import * as dynamodb from "aws-cdk-lib/aws-dynamodb";
 import * as iam from "aws-cdk-lib/aws-iam";
 import * as lambda from "aws-cdk-lib/aws-lambda";
+import * as s3 from "aws-cdk-lib/aws-s3";
+import * as sns from "aws-cdk-lib/aws-sns";
+import * as sqs from "aws-cdk-lib/aws-sqs";
 import {
   isIamRoleArn,
   resolveIamPolicy,
@@ -18,6 +22,7 @@ import type {
   FunctionUrlInvokeMode,
 } from "../model.js";
 import type { EnvValue } from "../../schema/cfn-env.js";
+import type { Construct } from "constructs";
 
 type FunctionUrlAllowedMethod = NonNullable<
   NonNullable<FunctionUrlConfig["cors"]>["allowedMethods"]
@@ -140,15 +145,118 @@ function toLambdaRuntime(runtime: string | undefined): lambda.Runtime {
   }
 }
 
-function resolveEnvIntrinsic(value: unknown): string {
+function lowerFirst(value: string): string {
+  if (!value) return value;
+  return value.charAt(0).toLowerCase() + value.slice(1);
+}
+
+function canonicalizeRefKey(value: string): string {
+  return value.replace(/[^A-Za-z0-9]/g, "").toLowerCase();
+}
+
+function findManagedRefTarget(
+  ref: string,
+  refs: Record<string, Construct>,
+): Construct | undefined {
+  if (ref in refs) return refs[ref];
+
+  const candidates = new Set<string>([lowerFirst(ref)]);
+  const prefixStripped = ref.replace(/^(Queue|Table|Topic|Bucket|Function)/, "");
+  if (prefixStripped !== ref) {
+    candidates.add(prefixStripped);
+    candidates.add(lowerFirst(prefixStripped));
+  }
+  for (const candidate of candidates) {
+    if (candidate in refs) return refs[candidate];
+  }
+
+  const canonical = canonicalizeRefKey(ref);
+  const matchedEntry = Object.entries(refs).find(
+    ([key]) => canonicalizeRefKey(key) === canonical,
+  );
+  return matchedEntry?.[1];
+}
+
+function resolveRefValueFromConstructRef(
+  ref: string,
+  refs: Record<string, Construct>,
+): string | undefined {
+  const target = findManagedRefTarget(ref, refs);
+  if (!target) return undefined;
+
+  if ("queueUrl" in target) {
+    return cdk.Token.asString((target as sqs.Queue).queueUrl);
+  }
+  if ("tableName" in target) {
+    return cdk.Token.asString((target as dynamodb.Table).tableName);
+  }
+  if ("topicArn" in target) {
+    return cdk.Token.asString((target as sns.Topic).topicArn);
+  }
+  if ("bucketName" in target) {
+    return cdk.Token.asString((target as s3.Bucket).bucketName);
+  }
+  if ("functionName" in target) {
+    return cdk.Token.asString((target as lambda.Function).functionName);
+  }
+
+  return undefined;
+}
+
+function resolveGetAttValueFromConstructRef(
+  logicalId: string,
+  attribute: string,
+  refs: Record<string, Construct>,
+): string | undefined {
+  const target = findManagedRefTarget(logicalId, refs);
+  if (!target) return undefined;
+
+  if ("queueArn" in target && attribute === "Arn") {
+    return cdk.Token.asString((target as sqs.Queue).queueArn);
+  }
+  if ("queueUrl" in target && attribute === "QueueUrl") {
+    return cdk.Token.asString((target as sqs.Queue).queueUrl);
+  }
+  if ("queueName" in target && attribute === "QueueName") {
+    return cdk.Token.asString((target as sqs.Queue).queueName);
+  }
+  if ("tableArn" in target && attribute === "Arn") {
+    return cdk.Token.asString((target as dynamodb.Table).tableArn);
+  }
+  if ("tableStreamArn" in target && attribute === "StreamArn") {
+    const streamArn = (target as dynamodb.Table).tableStreamArn;
+    return streamArn ? cdk.Token.asString(streamArn) : undefined;
+  }
+  if ("topicArn" in target && attribute === "TopicArn") {
+    return cdk.Token.asString((target as sns.Topic).topicArn);
+  }
+  if ("bucketArn" in target && attribute === "Arn") {
+    return cdk.Token.asString((target as s3.Bucket).bucketArn);
+  }
+  if ("functionArn" in target && attribute === "Arn") {
+    return cdk.Token.asString((target as lambda.Function).functionArn);
+  }
+
+  return undefined;
+}
+
+function resolveEnvIntrinsic(value: unknown, refs: Record<string, Construct>): string {
   if (typeof value === "string") return value;
   if (value !== null && typeof value === "object") {
     const obj = value as Record<string, unknown>;
     if ("Ref" in obj && typeof obj.Ref === "string") {
+      const resolvedFromConstruct = resolveRefValueFromConstructRef(obj.Ref, refs);
+      if (resolvedFromConstruct !== undefined) return resolvedFromConstruct;
       return cdk.Fn.ref(obj.Ref);
     }
     if ("Fn::GetAtt" in obj) {
       const parts = obj["Fn::GetAtt"] as [string, string];
+      const resolvedFromConstruct = resolveGetAttValueFromConstructRef(
+        parts[0],
+        parts[1],
+        refs,
+      );
+      if (resolvedFromConstruct !== undefined) return resolvedFromConstruct;
       return cdk.Token.asString(cdk.Fn.getAtt(parts[0], parts[1]));
     }
     if ("Fn::Sub" in obj) {
@@ -157,29 +265,33 @@ function resolveEnvIntrinsic(value: unknown): string {
       const [template, vars] = sub as [string, Record<string, unknown>];
       const resolvedVars: Record<string, string> = {};
       for (const [k, v] of Object.entries(vars)) {
-        resolvedVars[k] = resolveEnvIntrinsic(v);
+        resolvedVars[k] = resolveEnvIntrinsic(v, refs);
       }
       return cdk.Fn.sub(template, resolvedVars);
     }
     if ("Fn::Join" in obj) {
       const [separator, parts] = obj["Fn::Join"] as [string, unknown[]];
-      return cdk.Fn.join(separator, parts.map((p) => resolveEnvIntrinsic(p)));
+      return cdk.Fn.join(
+        separator,
+        parts.map((p) => resolveEnvIntrinsic(p, refs)),
+      );
     }
   }
   throw new Error(`Unsupported environment variable intrinsic: ${JSON.stringify(value)}`);
 }
 
-function resolveEnvValue(value: EnvValue): string {
+function resolveEnvValue(value: EnvValue, refs: Record<string, Construct>): string {
   if (typeof value === "string") return value;
-  return resolveEnvIntrinsic(value);
+  return resolveEnvIntrinsic(value, refs);
 }
 
 function resolveEnvRecord(
   env: Record<string, EnvValue>,
+  refs: Record<string, Construct>,
 ): Record<string, string> {
   const result: Record<string, string> = {};
   for (const [key, value] of Object.entries(env)) {
-    result[key] = resolveEnvValue(value);
+    result[key] = resolveEnvValue(value, refs);
   }
   return result;
 }
@@ -229,7 +341,7 @@ export const functionsDomain: DomainPlugin = {
           : lambda.Code.fromAsset(build.assetPath),
         timeout: Duration.seconds(fn.timeout ?? 30),
         memorySize: fn.memorySize ?? 256,
-        environment: fn.environment ? resolveEnvRecord(fn.environment) : undefined,
+        environment: fn.environment ? resolveEnvRecord(fn.environment, ctx.refs) : undefined,
         role: importedRole,
       });
       ctx.refs[name] = fnResource;

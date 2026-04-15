@@ -258,6 +258,18 @@ describe("functions domain e2e", () => {
         },
       }),
     );
+
+    const functions = template.findResources("AWS::Lambda::Function") as Record<
+      string,
+      { Properties?: { Environment?: { Variables?: Record<string, unknown> } } }
+    >;
+    const lambdaDef = Object.values(functions)[0];
+    const queueUrl = lambdaDef?.Properties?.Environment?.Variables?.QUEUE_URL as
+      | { Ref?: string }
+      | undefined;
+    expect(queueUrl?.Ref).toBeDefined();
+    expect(queueUrl?.Ref).not.toBe("JobsQueue");
+    expect(queueUrl?.Ref).toContain("QueueJobsQueue");
   });
 
   test("synthesizes Fn::GetAtt intrinsic environment values", () => {
@@ -288,6 +300,65 @@ describe("functions domain e2e", () => {
         },
       }),
     );
+  });
+
+  test("resolves Fn::GetAtt logical-id casing variants to managed resources", () => {
+    const { template } = synthServiceConfig({
+      functions: {
+        worker: functionConfig({
+          environment: {
+            QUEUE_ARN: { "Fn::GetAtt": ["EmailReminderSyncQueue", "Arn"] },
+          },
+        }),
+      },
+      messaging: {
+        sqs: {
+          emailReminderSyncQueue: { visibilityTimeout: 30 },
+        },
+      },
+    });
+
+    const functions = template.findResources("AWS::Lambda::Function") as Record<
+      string,
+      { Properties?: { Environment?: { Variables?: Record<string, unknown> } } }
+    >;
+    const lambdaDef = Object.values(functions)[0];
+    const queueArn = lambdaDef?.Properties?.Environment?.Variables?.QUEUE_ARN as
+      | { "Fn::GetAtt"?: [string, string] }
+      | string
+      | undefined;
+
+    expect(queueArn).toBeDefined();
+    if (typeof queueArn !== "string" && queueArn?.["Fn::GetAtt"]) {
+      expect(queueArn["Fn::GetAtt"][0]).toContain("QueueemailReminderSyncQueue");
+      expect(queueArn["Fn::GetAtt"][0]).not.toBe("EmailReminderSyncQueue");
+    }
+  });
+
+  test("resolves SQS Fn::GetAtt QueueName via managed construct mapping", () => {
+    const { template } = synthServiceConfig({
+      functions: {
+        worker: functionConfig({
+          environment: {
+            QUEUE_NAME: { "Fn::GetAtt": ["EmailReminderSyncQueue", "QueueName"] },
+          },
+        }),
+      },
+      messaging: {
+        sqs: {
+          emailReminderSyncQueue: { visibilityTimeout: 30 },
+        },
+      },
+    });
+
+    const functions = template.findResources("AWS::Lambda::Function") as Record<
+      string,
+      { Properties?: { Environment?: { Variables?: Record<string, unknown> } } }
+    >;
+    const lambdaDef = Object.values(functions)[0];
+    const queueName = lambdaDef?.Properties?.Environment?.Variables?.QUEUE_NAME as unknown;
+    expect(queueName).toBeDefined();
+    expect(JSON.stringify(queueName)).not.toContain("EmailReminderSyncQueue");
   });
 
   test("synthesizes Fn::Sub intrinsic environment values", () => {

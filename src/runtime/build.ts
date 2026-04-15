@@ -61,13 +61,65 @@ function findNearestTsconfig(fromDir: string): string | undefined {
   }
 }
 
+function walkFiles(root: string): string[] {
+  const entries = fs.readdirSync(root, { withFileTypes: true });
+  const files: string[] = [];
+  for (const entry of entries) {
+    const fullPath = path.join(root, entry.name);
+    if (entry.isDirectory()) {
+      files.push(...walkFiles(fullPath));
+      continue;
+    }
+    files.push(fullPath);
+  }
+  return files;
+}
+
+function resolveCompiledOutputPath(outRoot: string, absSource: string): string | undefined {
+  const baseName = path.parse(absSource).name;
+  const directCandidates = [
+    path.join(outRoot, `${baseName}.js`),
+    path.join(outRoot, `${baseName}.mjs`),
+    path.join(outRoot, `${baseName}.cjs`),
+  ];
+  const directMatch = directCandidates.find((candidate) => fs.existsSync(candidate));
+  if (directMatch) return directMatch;
+
+  const emittedFiles = walkFiles(outRoot)
+    .filter((filePath) => /\.(mjs|cjs|js)$/i.test(filePath))
+    .filter((filePath) => path.parse(filePath).name === baseName);
+  if (emittedFiles.length === 0) return undefined;
+
+  emittedFiles.sort((a, b) => {
+    const depthA = path.relative(outRoot, a).split(path.sep).length;
+    const depthB = path.relative(outRoot, b).split(path.sep).length;
+    if (depthA !== depthB) return depthA - depthB;
+
+    const extOrder = (value: string): number => {
+      if (value.endsWith(".js")) return 0;
+      if (value.endsWith(".mjs")) return 1;
+      if (value.endsWith(".cjs")) return 2;
+      return 3;
+    };
+    return extOrder(a) - extOrder(b);
+  });
+
+  return emittedFiles[0];
+}
+
+function toHandlerModulePath(outRoot: string, compiledFile: string): string {
+  const relativePath = path.relative(outRoot, compiledFile);
+  const withoutExt = relativePath.replace(/\.(mjs|cjs|js)$/i, "");
+  return withoutExt.split(path.sep).join("/");
+}
+
 function compileTypeScriptHandler(
   functionName: string,
   sourceHandler: string,
 ): BuildResult {
   const [sourceModulePath, sourceExport = "handler"] = sourceHandler.split(".");
   const absSource = resolveTypeScriptSourcePath(sourceModulePath);
-  const outRoot = path.resolve(process.cwd(), ".yamlcdk-build", functionName);
+  const outRoot = path.resolve(process.cwd(), ".yamlcdk", "build", functionName);
   ensureDir(outRoot);
 
   const nearestTsconfig = findNearestTsconfig(path.dirname(absSource));
@@ -80,6 +132,7 @@ function compileTypeScriptHandler(
       outDir: outRoot,
       noEmit: false,
       declaration: false,
+      emitDeclarationOnly: false,
       sourceMap: false,
     },
     files: [absSource],
@@ -112,17 +165,17 @@ function compileTypeScriptHandler(
     );
   }
 
-  const relCompiled = `${path.parse(absSource).name}.js`;
-  const compiledFile = path.join(outRoot, relCompiled);
-  if (!fs.existsSync(compiledFile)) {
+  const compiledFile = resolveCompiledOutputPath(outRoot, absSource);
+  if (!compiledFile || !fs.existsSync(compiledFile)) {
     throw new Error(
-      `TypeScript build did not produce expected file for "${functionName}": ${compiledFile}`,
+      `TypeScript build did not produce expected runtime file for "${functionName}" in ${outRoot}.`,
     );
   }
+  const handlerModulePath = toHandlerModulePath(outRoot, compiledFile);
 
   return {
     assetPath: outRoot,
-    handler: `${path.parse(relCompiled).name}.${sourceExport}`,
+    handler: `${handlerModulePath}.${sourceExport}`,
   };
 }
 

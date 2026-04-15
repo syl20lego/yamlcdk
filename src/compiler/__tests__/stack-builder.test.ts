@@ -4,6 +4,7 @@ import { normalizeConfig } from "../../config/normalize.js";
 import { validateServiceConfig } from "../../config/schema.js";
 import { parseServiceModel } from "../model.js";
 import { DomainConfigs } from "../plugins/domain-configs.js";
+import { SQS_CONFIG } from "../plugins/native-domain-configs.js";
 
 describe("compiler", () => {
   test("synthesizes a cross-domain stack with core resources", () => {
@@ -425,5 +426,80 @@ describe("compiler", () => {
     expect(outputs.ServiceEndpoint).toBeDefined();
     expect(outputs.ServiceEndpoint.Export.Name).toBe("my-api-endpoint");
     expect(outputs.ServiceEndpoint.Value).toBeDefined();
+  });
+
+  test("remaps passthrough output Fn::GetAtt logical IDs to synthesized managed resources", () => {
+    const domainConfigs = new DomainConfigs();
+    domainConfigs.set(SQS_CONFIG, {
+      queues: {
+        emailReminderSyncQueue: {},
+      },
+    });
+
+    const model = parseServiceModel({
+      service: "demo",
+      stackName: "demo-dev",
+      provider: { region: "us-east-1", stage: "dev" },
+      functions: {
+        hello: {
+          handler: "src/hello.handler",
+          events: [],
+        },
+      },
+      iam: { statements: {} },
+      domainConfigs,
+      passthroughOutputs: {
+        EmailReminderSyncQueue: {
+          Value: { "Fn::GetAtt": ["EmailReminderSyncQueue", "Arn"] },
+        },
+      },
+    });
+
+    const { app } = buildApp(model, { stubBuild: true });
+    const assembly = app.synth();
+    const stackArtifact = assembly.getStackArtifact("demo-dev");
+    const outputs = stackArtifact.template.Outputs;
+    const value = outputs.EmailReminderSyncQueue.Value as { "Fn::GetAtt": [string, string] };
+
+    expect(value["Fn::GetAtt"][0]).toContain("QueueemailReminderSyncQueue");
+    expect(value["Fn::GetAtt"][0]).not.toBe("EmailReminderSyncQueue");
+    expect(value["Fn::GetAtt"][1]).toBe("Arn");
+  });
+
+  test("remaps passthrough output Ref logical IDs to synthesized managed resources", () => {
+    const domainConfigs = new DomainConfigs();
+    domainConfigs.set(SQS_CONFIG, {
+      queues: {
+        emailReminderSyncQueue: {},
+      },
+    });
+
+    const model = parseServiceModel({
+      service: "demo",
+      stackName: "demo-dev",
+      provider: { region: "us-east-1", stage: "dev" },
+      functions: {
+        hello: {
+          handler: "src/hello.handler",
+          events: [],
+        },
+      },
+      iam: { statements: {} },
+      domainConfigs,
+      passthroughOutputs: {
+        EmailReminderSyncQueueRef: {
+          Value: { Ref: "EmailReminderSyncQueue" },
+        },
+      },
+    });
+
+    const { app } = buildApp(model, { stubBuild: true });
+    const assembly = app.synth();
+    const stackArtifact = assembly.getStackArtifact("demo-dev");
+    const outputs = stackArtifact.template.Outputs;
+    const value = outputs.EmailReminderSyncQueueRef.Value as { Ref: string };
+
+    expect(value.Ref).toContain("QueueemailReminderSyncQueue");
+    expect(value.Ref).not.toBe("EmailReminderSyncQueue");
   });
 });

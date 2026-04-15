@@ -1,6 +1,7 @@
 import cdk, { CfnOutput } from "aws-cdk-lib";
 import { CfnElement, Stack, type StackProps, Tags } from "aws-cdk-lib";
 import { Construct } from "constructs";
+import { tryGetLogicalId } from "./stack/helpers.js";
 import type { ServiceModel } from "./model.js";
 import { serviceModelSchema } from "./model.js";
 import type { NormalizedServiceConfig } from "../config/normalize.js";
@@ -17,6 +18,95 @@ import { validateDeploymentMode } from "./stack/validation.js";
 import { adaptConfig } from "../definitions/yamlcdk/plugin.js";
 import type { BuildResult } from "../runtime/build.js";
 import { prepareFunctionBuilds } from "../runtime/build.js";
+
+function lowerFirst(value: string): string {
+  if (!value) return value;
+  return value.charAt(0).toLowerCase() + value.slice(1);
+}
+
+function canonicalizeRefKey(value: string): string {
+  return value.replace(/[^A-Za-z0-9]/g, "").toLowerCase();
+}
+
+function findManagedRefTarget(
+  ref: string,
+  refs: Record<string, Construct>,
+): Construct | undefined {
+  if (ref in refs) return refs[ref];
+
+  const candidates = new Set<string>([lowerFirst(ref)]);
+  const prefixStripped = ref.replace(/^(Queue|Table|Topic|Bucket|Function)/, "");
+  if (prefixStripped !== ref) {
+    candidates.add(prefixStripped);
+    candidates.add(lowerFirst(prefixStripped));
+  }
+  for (const candidate of candidates) {
+    if (candidate in refs) return refs[candidate];
+  }
+
+  const canonical = canonicalizeRefKey(ref);
+  const matchedEntry = Object.entries(refs).find(
+    ([key]) => canonicalizeRefKey(key) === canonical,
+  );
+  return matchedEntry?.[1];
+}
+
+function remapManagedIntrinsicsInOutputValue(
+  value: unknown,
+  refs: Record<string, Construct>,
+  stack: Stack,
+): unknown {
+  if (Array.isArray(value)) {
+    return value.map((entry) => remapManagedIntrinsicsInOutputValue(entry, refs, stack));
+  }
+  if (value === null || typeof value !== "object") {
+    return value;
+  }
+
+  const record = value as Record<string, unknown>;
+  if (
+    "Ref" in record &&
+    typeof record.Ref === "string" &&
+    Object.keys(record).length === 1
+  ) {
+    const target = findManagedRefTarget(record.Ref, refs);
+    const logicalId = target ? tryGetLogicalId(stack, target) : undefined;
+    return logicalId ? { Ref: logicalId } : value;
+  }
+
+  if (
+    "Fn::GetAtt" in record &&
+    Array.isArray(record["Fn::GetAtt"]) &&
+    record["Fn::GetAtt"].length === 2 &&
+    typeof record["Fn::GetAtt"][0] === "string" &&
+    typeof record["Fn::GetAtt"][1] === "string" &&
+    Object.keys(record).length === 1
+  ) {
+    const [refId, attribute] = record["Fn::GetAtt"] as [string, string];
+    const target = findManagedRefTarget(refId, refs);
+    const logicalId = target ? tryGetLogicalId(stack, target) : undefined;
+    return logicalId ? { "Fn::GetAtt": [logicalId, attribute] } : value;
+  }
+
+  return Object.fromEntries(
+    Object.entries(record).map(([key, entry]) => [
+      key,
+      remapManagedIntrinsicsInOutputValue(entry, refs, stack),
+    ]),
+  );
+}
+
+function remapPassthroughOutputDefinition(
+  outputDef: Record<string, unknown>,
+  refs: Record<string, Construct>,
+  stack: Stack,
+): Record<string, unknown> {
+  if (!("Value" in outputDef)) return outputDef;
+  return {
+    ...outputDef,
+    Value: remapManagedIntrinsicsInOutputValue(outputDef.Value, refs, stack),
+  };
+}
 
 export class ServiceStack extends Stack {
   readonly refs: Record<string, Construct>;
@@ -74,7 +164,12 @@ export class ServiceStack extends Stack {
         model.passthroughOutputs,
       )) {
         if ("Value" in outputDef) {
-          new RawCfnOutput(this, `Passthrough${logicalId}`, logicalId, outputDef);
+          new RawCfnOutput(
+            this,
+            `Passthrough${logicalId}`,
+            logicalId,
+            remapPassthroughOutputDefinition(outputDef, refs, this),
+          );
           continue;
         }
 

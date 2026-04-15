@@ -400,5 +400,62 @@ resources:
       expect(outputs.ServiceEndpoint.Export.Name).toBe("demo-service-endpoint");
       expect(outputs.ServiceEndpoint.Value).toBeDefined();
     });
+
+    test("remaps output Fn::GetAtt source logical IDs for managed resources", () => {
+      const { template } = buildDefinitionFromYaml(
+        `
+service: demo
+provider:
+  name: aws
+  stage: dev
+  region: us-east-1
+functions:
+  hello:
+    handler: src/hello.handler
+resources:
+  Resources:
+    EmailReminderSyncQueue:
+      Type: AWS::SQS::Queue
+  Outputs:
+    EmailReminderSyncQueue:
+      Value: !GetAtt EmailReminderSyncQueue.Arn
+`,
+        "serverless.yml",
+      );
+
+      const outputs = template.toJSON().Outputs;
+      const value = outputs.EmailReminderSyncQueue.Value as { "Fn::GetAtt": [string, string] };
+      expect(value["Fn::GetAtt"][0]).toContain("QueueEmailReminderSyncQueue");
+      expect(value["Fn::GetAtt"][0]).not.toBe("EmailReminderSyncQueue");
+      expect(value["Fn::GetAtt"][1]).toBe("Arn");
+    });
+
+    test("remaps output Ref source logical IDs for managed resources", () => {
+      const { template } = buildDefinitionFromYaml(
+        `
+service: demo
+provider:
+  name: aws
+  stage: dev
+  region: us-east-1
+functions:
+  hello:
+    handler: src/hello.handler
+resources:
+  Resources:
+    EmailReminderSyncQueue:
+      Type: AWS::SQS::Queue
+  Outputs:
+    EmailReminderSyncQueue:
+      Value: !Ref EmailReminderSyncQueue
+`,
+        "serverless.yml",
+      );
+
+      const outputs = template.toJSON().Outputs;
+      const value = outputs.EmailReminderSyncQueue.Value as { Ref: string };
+      expect(value.Ref).toContain("QueueEmailReminderSyncQueue");
+      expect(value.Ref).not.toBe("EmailReminderSyncQueue");
+    });
   });
 });
