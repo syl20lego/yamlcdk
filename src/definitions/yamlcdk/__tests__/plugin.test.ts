@@ -5,11 +5,19 @@ import path from "node:path";
 import { DomainConfigs } from "../../../compiler/plugins/index.js";
 import {
   APIS_CONFIG,
+} from "../../../domains/apis/model.js";
+import {
   DYNAMODB_CONFIG,
+} from "../../../domains/dynamodb/model.js";
+import {
   S3_CONFIG,
+} from "../../../domains/s3/model.js";
+import {
   SNS_CONFIG,
+} from "../../../domains/sns/model.js";
+import {
   SQS_CONFIG,
-} from "../../../compiler/plugins/native-domain-configs.js";
+} from "../../../domains/sqs/model.js";
 import { normalizeConfig } from "../../../config/normalize.js";
 import { validateServiceConfig } from "../../../config/schema.js";
 import { adaptConfig, yamlcdkDefinitionPlugin } from "../index.js";

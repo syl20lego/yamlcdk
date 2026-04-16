@@ -22,14 +22,9 @@ import type {
   SQSQueueConfig,
 } from "../../compiler/plugins/index.js";
 import {
-  APIS_CONFIG,
-  CLOUDFRONT_CONFIG,
-  DomainConfigs,
-  DYNAMODB_CONFIG,
-  S3_CONFIG,
-  SNS_CONFIG,
-  SQS_CONFIG
-} from "../../compiler/plugins/index.js";
+  adaptDomainConfigsFromCloudFormation,
+} from "../../domains/definition-adapters.js";
+import type { CloudFormationDomainConfigInput } from "../../domains/adapters/types.js";
 import {
   createDynamodbStreamEvent,
   createEventBridgeEvent,
@@ -970,26 +965,25 @@ export function adaptCfnTemplate(
   wireHttpApiRoutes(allResources, functions);
   wireFunctionUrls(allResources, functions);
 
-  // Build domain configs
-  const dc = new DomainConfigs();
-
-  dc.set(S3_CONFIG, {
-    buckets,
-    cleanupRoleArn: meta.s3?.cleanupRoleArn,
-  });
-  dc.set(DYNAMODB_CONFIG, { tables });
-  dc.set(SQS_CONFIG, { queues });
-  dc.set(SNS_CONFIG, { topics });
-  dc.set(APIS_CONFIG, {
-    restApi: meta.restApi?.cloudWatchRoleArn
-      ? { cloudWatchRoleArn: meta.restApi.cloudWatchRoleArn }
-      : undefined,
-  });
-  dc.set(CLOUDFRONT_CONFIG, {
-    cachePolicies,
-    originRequestPolicies,
-    distributions,
-  });
+  const domainInput: CloudFormationDomainConfigInput = {
+    s3: {
+      buckets,
+      cleanupRoleArn: meta.s3?.cleanupRoleArn,
+    },
+    dynamodb: { tables },
+    sqs: { queues },
+    sns: { topics },
+    apis: {
+      restApi: meta.restApi?.cloudWatchRoleArn
+        ? { cloudWatchRoleArn: meta.restApi.cloudWatchRoleArn }
+        : undefined,
+    },
+    cloudfront: {
+      cachePolicies,
+      originRequestPolicies,
+      distributions,
+    },
+  };
 
   const passthroughOutputs =
     template.Outputs && Object.keys(template.Outputs).length > 0
@@ -1009,7 +1003,7 @@ export function adaptCfnTemplate(
     },
     functions,
     iam: { statements: {} },
-    domainConfigs: dc,
+    domainConfigs: adaptDomainConfigsFromCloudFormation(domainInput),
     passthroughOutputs,
   });
 }

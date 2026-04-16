@@ -14,9 +14,13 @@ import {
 } from "../index.js";
 import {
   S3_CONFIG,
+} from "../../../domains/s3/model.js";
+import {
   SNS_CONFIG,
+} from "../../../domains/sns/model.js";
+import {
   SQS_CONFIG,
-} from "../../../compiler/plugins/native-domain-configs.js";
+} from "../../../domains/sqs/model.js";
 
 describe("serverless definition plugin", () => {
   test("formatName is serverless", () => {

@@ -1,13 +1,18 @@
 import { describe, expect, test } from "vitest";
 import { DomainConfigs, createDomainConfigKey } from "../index.js";
 import {
-  S3_CONFIG,
+  APIS_CONFIG,
   apisDomainConfigSchema,
+} from "../../../domains/apis/model.js";
+import {
   dynamodbDomainConfigSchema,
-  snsDomainConfigSchema,
+} from "../../../domains/dynamodb/model.js";
+import {
+  S3_CONFIG,
   s3DomainConfigSchema,
-  sqsDomainConfigSchema,
-} from "../native-domain-configs.js";
+} from "../../../domains/s3/model.js";
+import { snsDomainConfigSchema } from "../../../domains/sns/model.js";
+import { sqsDomainConfigSchema } from "../../../domains/sqs/model.js";
 
 describe("DomainConfigs", () => {
   test("set and get with typed key", () => {

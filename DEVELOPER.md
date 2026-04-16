@@ -73,8 +73,9 @@ If you want to exercise deploy/diff/remove flows against AWS, make sure you also
 - `src/compiler/`
   - `model.ts` - canonical `ServiceModel` and event/build/provider schemas
   - `stack-builder.ts` - compiler lifecycle orchestration
-  - `plugins/` - domain/definition plugin contracts, registries, and typed domain config keys
-  - `domains/` - native domain plugins (`s3`, `dynamodb`, `sqs`, `sns`, `functions`, `eventbridge`, `apis`)
+  - `plugins/` - domain/definition plugin contracts and registries
+  - `domains/` - compatibility wrappers for compiler domain plugin entry points
+- `src/domains/` - domain-first modules (`<domain>/model.ts`, `<domain>/compiler.ts`, `<domain>/adapters.ts`) and `manifest.ts`
   - `stack/` - shared compiler helpers and validation
 - `src/runtime/`
   - `build.ts` - per-function build/package preparation
@@ -116,7 +117,7 @@ Zod schemas are the source of truth in:
 
 - `src/config/schema.ts` for raw YAML input
 - `src/compiler/model.ts` for the canonical compiler model
-- `src/compiler/plugins/native-domain-configs.ts` for domain-specific config slices
+- `src/domains/<domain>/model.ts` for domain-specific config schemas and typed keys
 
 Expectations:
 
@@ -143,8 +144,9 @@ Key files:
 
 - contract: `src/compiler/plugins/domain-plugin.ts`
 - typed config keys: `src/compiler/plugins/domain-configs.ts`
-- native domain config schemas/keys: `src/compiler/plugins/native-domain-configs.ts`
-- native domain registration: `src/compiler/domains/index.ts`
+- domain-owned schemas/keys: `src/domains/<domain>/model.ts`
+- native domain manifest + ordering: `src/domains/manifest.ts`
+- native domain registry bridge: `src/compiler/domains/index.ts`
 - compiler lifecycle orchestration: `src/compiler/stack-builder.ts`
 
 ### Domain plugin lifecycle
@@ -168,7 +170,7 @@ Use them as intended:
 ### Safe process for a new or changed domain
 
 1. **Define the domain config contract**
-   - Add a Zod schema and typed config key in `src/compiler/plugins/native-domain-configs.ts`
+   - Add a Zod schema and typed config key in `src/domains/<domain>/model.ts`
    - Create the key with `createDomainConfigKey(...)` so `DomainConfigs.set()` validates writes at runtime
 
 2. **Expose the domain through YAML if needed**
@@ -176,15 +178,17 @@ Use them as intended:
    - Update `src/config/normalize.ts` if the new section needs defaults
 
 3. **Adapt normalized config into the domain config store**
-   - Update `adaptDomainConfigs()` in `src/definitions/yamlcdk/plugin.ts`
+   - Add/update domain adapters in `src/domains/<domain>/adapters.ts`
+   - Ensure the adapter is wired in `src/domains/manifest.ts`
 
 4. **Implement the plugin**
-   - Add or update `src/compiler/domains/<name>.ts`
+   - Add or update `src/domains/<name>/compiler.ts` (or the wrapped implementation it points to)
    - Read your slice through `ctx.model.domainConfigs`
    - Share constructs through `ctx.refs`
 
 5. **Register it in order**
-   - Update `src/compiler/domains/index.ts`
+   - Update `src/domains/manifest.ts` (source of truth)
+   - `src/compiler/domains/index.ts` will pick up manifest-driven ordering
    - Ordering matters:
      - resource-creation domains before `functions`
      - binding domains after `functions`

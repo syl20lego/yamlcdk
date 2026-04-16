@@ -3,7 +3,7 @@ import * as apigw from "aws-cdk-lib/aws-apigateway";
 import * as apigwv2 from "aws-cdk-lib/aws-apigatewayv2";
 import * as apigwv2Integrations from "aws-cdk-lib/aws-apigatewayv2-integrations";
 import { withStageName } from "../stack/helpers.js";
-import { APIS_CONFIG } from "../plugins/index.js";
+import { APIS_CONFIG } from "../../domains/apis/model.js";
 import type { DomainPlugin } from "../plugins/index.js";
 
 export const apisDomain: DomainPlugin = {

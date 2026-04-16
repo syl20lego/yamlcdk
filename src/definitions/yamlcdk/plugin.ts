@@ -14,7 +14,6 @@ import type {
   FunctionUrlConfig,
 } from "../../compiler/model.js";
 import { parseServiceModel } from "../../compiler/model.js";
-import { DomainConfigs } from "../../compiler/plugins/index.js";
 import { normalizeManagedResourceRef } from "../../compiler/resource-refs.js";
 import path from "node:path";
 import {
@@ -26,17 +25,10 @@ import {
   createSnsEvent,
   createSqsEvent,
 } from "../shared-event-adapters.js";
-import {
-  S3_CONFIG,
-  DYNAMODB_CONFIG,
-  SQS_CONFIG,
-  SNS_CONFIG,
-  APIS_CONFIG,
-  CLOUDFRONT_CONFIG,
-} from "../../compiler/plugins/native-domain-configs.js";
 import { loadRawConfig } from "../../config/load.js";
 import { normalizeConfig } from "../../config/normalize.js";
 import type { NormalizedServiceConfig } from "../../config/normalize.js";
+import { adaptDomainConfigsFromYamlcdk } from "../../domains/definition-adapters.js";
 
 // ─── Config → ServiceModel adaptation ───────────────────────
 
@@ -138,32 +130,6 @@ function adaptFunctions(
   return result;
 }
 
-function adaptDomainConfigs(config: NormalizedServiceConfig): DomainConfigs {
-  const dc = new DomainConfigs();
-
-  dc.set(S3_CONFIG, {
-    buckets: config.storage.s3,
-    cleanupRoleArn: config.provider.s3?.cleanupRoleArn,
-  });
-
-  dc.set(DYNAMODB_CONFIG, { tables: config.storage.dynamodb });
-  dc.set(SQS_CONFIG, { queues: config.messaging.sqs });
-  dc.set(SNS_CONFIG, { topics: config.messaging.sns });
-  dc.set(APIS_CONFIG, {
-    restApi: config.provider.restApi
-      ? { cloudWatchRoleArn: config.provider.restApi.cloudWatchRoleArn }
-      : undefined,
-  });
-
-  dc.set(CLOUDFRONT_CONFIG, {
-    cachePolicies: config.cdn.cachePolicies,
-    originRequestPolicies: config.cdn.originRequestPolicies,
-    distributions: config.cdn.distributions,
-  });
-
-  return dc;
-}
-
 function adaptIam(config: NormalizedServiceConfig): ServiceModel["iam"] {
   return {
     statements: Object.fromEntries(
@@ -194,7 +160,7 @@ export function adaptConfig(config: NormalizedServiceConfig): ServiceModel {
     },
     functions: adaptFunctions(config),
     iam: adaptIam(config),
-    domainConfigs: adaptDomainConfigs(config),
+    domainConfigs: adaptDomainConfigsFromYamlcdk(config),
   });
 }
 

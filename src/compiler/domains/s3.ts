@@ -3,7 +3,7 @@ import * as s3 from "aws-cdk-lib/aws-s3";
 import * as s3n from "aws-cdk-lib/aws-s3-notifications";
 import { withStageName } from "../stack/helpers.js";
 import { normalizeManagedResourceRef } from "../resource-refs.js";
-import { S3_CONFIG } from "../plugins/native-domain-configs.js";
+import { S3_CONFIG } from "../../domains/s3/model.js";
 import type { DomainPlugin } from "../plugins/index.js";
 
 const S3_EVENT_MAP: Record<string, s3.EventType> = {

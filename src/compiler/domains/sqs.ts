@@ -3,7 +3,7 @@ import * as sqs from "aws-cdk-lib/aws-sqs";
 import { Duration } from "aws-cdk-lib";
 import { withStageName } from "../stack/helpers.js";
 import { normalizeManagedResourceRef } from "../resource-refs.js";
-import { SQS_CONFIG } from "../plugins/native-domain-configs.js";
+import { SQS_CONFIG } from "../../domains/sqs/model.js";
 import type { DomainPlugin } from "../plugins/index.js";
 
 export const sqsDomain: DomainPlugin = {

@@ -7,10 +7,10 @@
  */
 
 import type cdk from "aws-cdk-lib";
-import type * as lambda from "aws-cdk-lib/aws-lambda";
 import type { Construct } from "constructs";
-import type { ServiceModel, EventDeclaration } from "../model.js";
+import type { ServiceModel } from "../model.js";
 import type { BuildResult } from "../../runtime/build.js";
+import type { FunctionEventBinding } from "../../domains/functions/interfaces.js";
 
 // ─── Shared resource refs ───────────────────────────────────
 
@@ -20,17 +20,13 @@ export type ResourceRefs = Record<string, Construct>;
 // ─── Event binding (synthesis-level) ────────────────────────
 
 /**
- * CDK-level event binding produced during synthesis.
+ * Explicit cross-domain handoff emitted by the functions domain.
  *
- * Extends the model-level {@link EventDeclaration} with the
- * concrete Lambda Function construct so binding domains can
- * wire event sources without knowing which function definition
- * format produced the declaration.
+ * The payload shape is defined in `src/domains/functions/interfaces.ts`.
+ * Binding domains consume this contract to wire integrations
+ * without depending on definition-format-specific details.
  */
-export type EventBinding = {
-  readonly functionName: string;
-  readonly fnResource: lambda.Function;
-} & EventDeclaration;
+export type EventBinding = FunctionEventBinding;
 
 // ─── Compilation context ────────────────────────────────────
 

@@ -4,7 +4,7 @@ import * as iam from "aws-cdk-lib/aws-iam";
 import * as lambda from "aws-cdk-lib/aws-lambda";
 import { withStageName } from "../stack/helpers.js";
 import { normalizeManagedResourceRef } from "../resource-refs.js";
-import { DYNAMODB_CONFIG } from "../plugins/index.js";
+import { DYNAMODB_CONFIG } from "../../domains/dynamodb/model.js";
 import type { DomainPlugin } from "../plugins/index.js";
 
 function attrType(

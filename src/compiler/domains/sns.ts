@@ -3,7 +3,7 @@ import * as snsSubscriptions from "aws-cdk-lib/aws-sns-subscriptions";
 import * as sqs from "aws-cdk-lib/aws-sqs";
 import { withStageName } from "../stack/helpers.js";
 import { normalizeManagedResourceRef } from "../resource-refs.js";
-import { SNS_CONFIG } from "../plugins/native-domain-configs.js";
+import { SNS_CONFIG } from "../../domains/sns/model.js";
 import type { DomainPlugin } from "../plugins/index.js";
 
 export const snsDomain: DomainPlugin = {

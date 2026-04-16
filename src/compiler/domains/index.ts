@@ -1,25 +1,9 @@
 import type { DomainPlugin } from "../plugins/index.js";
 import { DomainRegistry } from "../plugins/registry.js";
-import { s3Domain } from "./s3.js";
-import { dynamodbDomain } from "./dynamodb.js";
-import { sqsDomain } from "./sqs.js";
-import { snsDomain } from "./sns.js";
-import { eventbridgeDomain } from "./eventbridge.js";
-import { functionsDomain } from "./functions.js";
-import { apisDomain } from "./apis.js";
-import { cloudfrontDomain } from "./cloudfront.js";
+import { nativeDomainsFromManifest } from "../../domains/manifest.js";
 
 /** All native domain plugins in recommended registration order. */
-export const nativeDomains: readonly DomainPlugin[] = [
-  s3Domain,
-  dynamodbDomain,
-  sqsDomain,
-  snsDomain,
-  functionsDomain,
-  eventbridgeDomain,
-  apisDomain,
-  cloudfrontDomain,
-];
+export const nativeDomains: readonly DomainPlugin[] = nativeDomainsFromManifest;
 
 /** Create a DomainRegistry pre-loaded with all native domains. */
 export function createNativeDomainRegistry(): DomainRegistry {
@@ -30,13 +14,23 @@ export function createNativeDomainRegistry(): DomainRegistry {
   return registry;
 }
 
+export { s3Domain } from "../../domains/s3/compiler.js";
+export { dynamodbDomain } from "../../domains/dynamodb/compiler.js";
+export { sqsDomain } from "../../domains/sqs/compiler.js";
+export { snsDomain } from "../../domains/sns/compiler.js";
+export { eventbridgeDomain } from "../../domains/eventbridge/compiler.js";
+export { functionsDomain } from "../../domains/functions/compiler.js";
+export { apisDomain } from "../../domains/apis/compiler.js";
+export { cloudfrontDomain } from "../../domains/cloudfront/compiler.js";
+
 export {
-  s3Domain,
-  dynamodbDomain,
-  sqsDomain,
-  snsDomain,
-  eventbridgeDomain,
-  functionsDomain,
-  apisDomain,
-  cloudfrontDomain,
-};
+  domainManifest as nativeDomainManifest,
+  orderedDomainManifest,
+} from "../../domains/manifest.js";
+
+export type {
+  DomainDescriptor,
+  DomainDescriptorWithConfig,
+  DomainDescriptorWithoutConfig,
+  DomainLifecycleRole,
+} from "../../domains/contracts.js";

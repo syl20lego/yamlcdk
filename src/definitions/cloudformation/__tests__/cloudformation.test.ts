@@ -12,10 +12,16 @@ import {
 } from "../index.js";
 import {
   S3_CONFIG,
+} from "../../../domains/s3/model.js";
+import {
   DYNAMODB_CONFIG,
+} from "../../../domains/dynamodb/model.js";
+import {
   SQS_CONFIG,
+} from "../../../domains/sqs/model.js";
+import {
   SNS_CONFIG,
-} from "../../../compiler/plugins/native-domain-configs.js";
+} from "../../../domains/sns/model.js";
 import { definitionRegistry } from "../../registry.js";
 import {writeTmpYaml} from "../../test-utils/e2e.js";
 
