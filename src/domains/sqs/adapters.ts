@@ -4,12 +4,16 @@ import type {
   CloudFormationDomainConfigInput,
   ServerlessDomainState,
 } from "../adapters/types.js";
-import { SQS_CONFIG, type SQSDomainConfig } from "./model.js";
+import {
+  SQS_CONFIG,
+  sqsYamlcdkMessagingSchema,
+  type SQSDomainConfig,
+} from "./model.js";
 
 export function adaptSqsDomainFromYamlcdk(
   config: NormalizedServiceConfig,
 ): SQSDomainConfig {
-  return { queues: config.messaging.sqs };
+  return { queues: sqsYamlcdkMessagingSchema.parse(config.messaging.sqs) };
 }
 
 export function adaptSqsDomainFromCloudFormation(
@@ -31,4 +35,3 @@ export function writeSqsServerlessDomainConfig(
 ): void {
   domainConfigs.set(SQS_CONFIG, { queues: state.sqs });
 }
-

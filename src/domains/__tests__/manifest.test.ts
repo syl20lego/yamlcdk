@@ -34,5 +34,14 @@ describe("domain manifest", () => {
       nativeDomainsFromManifest.map((plugin) => plugin.name),
     ).toEqual(orderedDomainManifest.map((descriptor) => descriptor.plugin.name));
   });
-});
 
+  test("declares unique yamlcdk section registrations", () => {
+    const registrations = orderedDomainManifest.flatMap((descriptor) =>
+      (descriptor.yamlcdkSections ?? []).map(
+        (entry) => `${entry.namespace}.${entry.key}`,
+      ),
+    );
+
+    expect(new Set(registrations).size).toBe(registrations.length);
+  });
+});

@@ -102,6 +102,89 @@ resources:
     expect(functionUrl?.Properties?.AuthType).toBe("NONE");
   });
 
+  test("preserves extended SNS topic properties from resources.Resources", () => {
+    const { template } = buildDefinitionFromYaml(
+      `
+service: sns-extended
+provider:
+  name: aws
+functions:
+  worker:
+    handler: src/worker.handler
+resources:
+  Resources:
+    AlertsTopic:
+      Type: AWS::SNS::Topic
+      Properties:
+        TopicName: alerts-topic.fifo
+        DisplayName: Alerts
+        FifoTopic: true
+        ContentBasedDeduplication: true
+        FifoThroughputScope: MessageGroup
+        KmsMasterKeyId: alias/aws/sns
+        SignatureVersion: "2"
+        TracingConfig: Active
+        ArchivePolicy:
+          MessageRetentionPeriod: "7"
+        DataProtectionPolicy:
+          Name: alerts-policy
+        DeliveryStatusLogging:
+          - Protocol: lambda
+            SuccessFeedbackSampleRate: 100
+        Tags:
+          - Key: Team
+            Value: platform
+    AlertsToWorker:
+      Type: AWS::SNS::Subscription
+      Properties:
+        Protocol: lambda
+        TopicArn: !Ref AlertsTopic
+        Endpoint: !GetAtt WorkerLambdaFunction.Arn
+        FilterPolicy:
+          severity:
+            - high
+        RawMessageDelivery: true
+`,
+      "serverless.yml",
+    );
+
+    template.hasResourceProperties(
+      "AWS::SNS::Topic",
+      Match.objectLike({
+        TopicName: "alerts-topic.fifo",
+        DisplayName: "Alerts",
+        FifoTopic: true,
+        ContentBasedDeduplication: true,
+        FifoThroughputScope: "MessageGroup",
+        KmsMasterKeyId: "alias/aws/sns",
+        SignatureVersion: "2",
+        TracingConfig: "Active",
+        ArchivePolicy: {
+          MessageRetentionPeriod: "7",
+        },
+        DataProtectionPolicy: {
+          Name: "alerts-policy",
+        },
+        DeliveryStatusLogging: Match.arrayWith([
+          Match.objectLike({
+            Protocol: "lambda",
+            SuccessFeedbackSampleRate: "100",
+          }),
+        ]),
+      }),
+    );
+    template.hasResourceProperties(
+      "AWS::SNS::Subscription",
+      Match.objectLike({
+        Protocol: "lambda",
+        FilterPolicy: {
+          severity: ["high"],
+        },
+        RawMessageDelivery: true,
+      }),
+    );
+  });
+
   test("maps Serverless deployment settings so bootstrap rules are not synthesized", () => {
     const { model, stack } = buildDefinitionFromYaml(
       `

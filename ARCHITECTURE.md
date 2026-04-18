@@ -1,6 +1,6 @@
 # yamlcdk architecture
 
-This document describes the **current pluginized architecture** implemented in this repository. It is intentionally aligned with the code under `src/compiler/plugins/`, `src/compiler/domains/`, `src/definitions/`, `src/config/`, and `src/runtime/`.
+This document describes the **current pluginized architecture** implemented in this repository. It is intentionally aligned with the code under `src/compiler/plugins/`, `src/domains/`, `src/definitions/`, `src/config/`, and `src/runtime/`.
 
 At a high level, `yamlcdk` is a compiler pipeline:
 
@@ -40,7 +40,7 @@ flowchart TD
     Build["Compiler core<br/>src/compiler/stack-builder.ts<br/>buildApp + ServiceStack"]
     DomainRegistry["DomainRegistry<br/>created by<br/>createNativeDomainRegistry()"]
     PluginRegistry["PluginRegistry<br/>aggregate holder"]
-    Domains["Native domain plugins<br/>src/compiler/domains/*.ts"]
+    Domains["Native domain plugins<br/>src/domains/*/compiler.ts"]
     CDK["CDK app / template / deploy<br/>src/runtime/cdk.ts"]
 
     CLI --> Loader
@@ -107,7 +107,7 @@ The compiler core lives mostly in:
 - `src/compiler/model.ts`
 - `src/compiler/stack-builder.ts`
 - `src/compiler/plugins/*.ts`
-- `src/compiler/domains/*.ts`
+- `src/domains/*/compiler.ts`
 
 Its job is to orchestrate a domain-agnostic lifecycle and provide shared compiler state:
 
@@ -228,7 +228,7 @@ All built-in definition plugins provide `generateStarter()`, which is what `src/
 
 Domain plugins own the **model-to-CDK** step for a specific infrastructure area.
 
-Current native domains are declared in `src/domains/manifest.ts` and registered by `src/compiler/domains/index.ts`:
+Current native domains are declared in `src/domains/manifest.ts` and registered by `src/domains/index.ts`:
 
 1. `s3Domain`
 2. `dynamodbDomain`
@@ -257,7 +257,7 @@ Properties of the current implementation:
 - `all()` returns plugins in insertion order,
 - insertion order is meaningful because the compiler executes lifecycle phases in that order.
 
-This registry is actively used today. `createNativeDomainRegistry()` in `src/compiler/domains/index.ts` registers the ordered plugins derived from `src/domains/manifest.ts` and hands the registry to `ServiceStack`.
+This registry is actively used today. `createNativeDomainRegistry()` in `src/domains/index.ts` registers the ordered plugins derived from `src/domains/manifest.ts` and hands the registry to `ServiceStack`.
 
 ### `DefinitionRegistry`
 

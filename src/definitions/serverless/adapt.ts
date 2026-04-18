@@ -267,6 +267,30 @@ function mergeSnsTopicConfig(
   return { ...merged, subscriptions: uniqueSubscriptions };
 }
 
+function remapSnsLambdaSubscriptionTargets(
+  topics: DomainState["sns"],
+  logicalIdToName: Map<string, string>,
+): DomainState["sns"] {
+  return Object.fromEntries(
+    Object.entries(topics).map(([topicName, topicConfig]) => {
+      const subscriptions = topicConfig.subscriptions?.map((subscription) => {
+        if ("type" in subscription && subscription.type === "lambda") {
+          const mappedTarget = logicalIdToName.get(subscription.target);
+          if (mappedTarget) {
+            return { ...subscription, target: mappedTarget };
+          }
+        }
+        return subscription;
+      });
+
+      if (!subscriptions) {
+        return [topicName, topicConfig];
+      }
+      return [topicName, { ...topicConfig, subscriptions }];
+    }),
+  );
+}
+
 function resolveServerlessReferenceName(
   value: unknown,
   description: string,
@@ -1027,6 +1051,16 @@ function mergeDomainStates(
   if (!resourceModel) return topLevelState;
 
   const resourceState = readServerlessDomainStateFromConfigs(resourceModel.domainConfigs);
+  const logicalIdToName = new Map(
+    [...topLevel.functionLogicalIds.entries()].map(([functionName, logicalId]) => [
+      logicalId,
+      functionName,
+    ]),
+  );
+  const remappedResourceSns = remapSnsLambdaSubscriptionTargets(
+    resourceState.sns,
+    logicalIdToName,
+  );
 
   return {
     s3: Object.fromEntries(
@@ -1059,10 +1093,10 @@ function mergeDomainStates(
       ),
     ),
     sns: Object.fromEntries(
-      [...new Set([...Object.keys(topLevelState.sns), ...Object.keys(resourceState.sns)])].map(
+      [...new Set([...Object.keys(topLevelState.sns), ...Object.keys(remappedResourceSns)])].map(
         (name) => [
           name,
-          mergeSnsTopicConfig(name, topLevelState.sns[name], resourceState.sns[name]) ?? {},
+          mergeSnsTopicConfig(name, topLevelState.sns[name], remappedResourceSns[name]) ?? {},
         ],
       ),
     ),

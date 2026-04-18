@@ -2,6 +2,7 @@ import type { DomainConfigKey } from "../compiler/plugins/domain-configs.js";
 import type { DomainConfigs } from "../compiler/plugins/domain-configs.js";
 import type { DomainPlugin } from "../compiler/plugins/domain-plugin.js";
 import type { NormalizedServiceConfig } from "../config/normalize.js";
+import type { ZodTypeAny } from "zod";
 import type {
   CloudFormationDomainConfigInput,
   ServerlessDomainState,
@@ -20,12 +21,24 @@ export interface DomainEventBindingContract {
   readonly consumes: boolean;
 }
 
+export type DomainYamlcdkSectionNamespace = "storage" | "messaging" | "cdn";
+
+export interface DomainYamlcdkSectionRegistration<
+  TSchema extends ZodTypeAny = ZodTypeAny,
+> {
+  readonly namespace: DomainYamlcdkSectionNamespace;
+  readonly key: string;
+  readonly schema: TSchema;
+  readonly createDefault: () => unknown;
+}
+
 interface DomainDescriptorBase {
   readonly id: string;
   readonly order: number;
   readonly role: DomainLifecycleRole;
   readonly plugin: DomainPlugin;
   readonly eventBindings?: DomainEventBindingContract;
+  readonly yamlcdkSections?: readonly DomainYamlcdkSectionRegistration[];
 }
 
 export interface DomainDefinitionAdapters<T> {

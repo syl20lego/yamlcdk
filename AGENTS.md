@@ -10,7 +10,7 @@
 - Input format detection is delegated to `DefinitionRegistry` (`src/definitions/registry.ts`) in strict order: `cloudformation`, `serverless`, `yamlcdk` catch-all.
 - All formats must adapt into canonical `ServiceModel` (`src/compiler/model.ts`) plus domain slices in `DomainConfigs` (`src/compiler/plugins/domain-configs.ts`).
 - Domain plugins are independent units coordinated through `ctx.refs` + `EventBinding[]`, not direct cross-domain imports.
-- Native domain execution order is declared in `src/domains/manifest.ts` and enforced by `src/compiler/domains/index.ts`: `s3 -> dynamodb -> sqs -> sns -> functions -> eventbridge -> apis -> cloudfront`.
+- Native domain execution order is declared in `src/domains/manifest.ts` and enforced by `src/domains/index.ts`: `s3 -> dynamodb -> sqs -> sns -> functions -> eventbridge -> apis -> cloudfront`.
 
 ## Core integration boundaries
 - CLI commands are thin wrappers in `src/commands/*.ts`; shared AWS flags come from `withAwsFlags(...)` in `src/cli.ts`.
@@ -41,6 +41,6 @@
 
 ## Tests and docs sync expectations
 - Place tests close to changed area (`src/**/__tests__/*.test.ts`).
-- Domain behavior changes also need `src/compiler/domains/__e2e__/` coverage.
+- Domain behavior changes also need `src/domains/__e2e__/` coverage.
 - Format detection/adaptation changes also need `src/definitions/**/__e2e__/` coverage.
 - If user-facing behavior changes, update `README.md`, relevant `examples/*.yml`, and starter templates in each definition plugin.

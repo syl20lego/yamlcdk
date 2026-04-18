@@ -292,6 +292,87 @@ Resources:
         }),
       );
     });
+
+    test("preserves extended SNS topic and subscription properties", () => {
+      const { template } = buildDefinitionFromYaml(`
+AWSTemplateFormatVersion: "2010-09-09"
+Metadata:
+  yamlcdk:
+    service: sns-extended
+Resources:
+  WorkerFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      Handler: src/worker.handler
+  AlertsTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      TopicName: alerts-topic.fifo
+      DisplayName: Alerts
+      FifoTopic: true
+      ContentBasedDeduplication: true
+      FifoThroughputScope: MessageGroup
+      KmsMasterKeyId: alias/aws/sns
+      SignatureVersion: "2"
+      TracingConfig: Active
+      ArchivePolicy:
+        MessageRetentionPeriod: "7"
+      DataProtectionPolicy:
+        Name: alerts-policy
+      DeliveryStatusLogging:
+        - Protocol: lambda
+          SuccessFeedbackSampleRate: 100
+      Tags:
+        - Key: Team
+          Value: platform
+  AlertsToWorker:
+    Type: AWS::SNS::Subscription
+    Properties:
+      Protocol: lambda
+      TopicArn: !Ref AlertsTopic
+      Endpoint: !GetAtt WorkerFunction.Arn
+      FilterPolicy:
+        severity:
+          - high
+      RawMessageDelivery: true
+`);
+
+      template.hasResourceProperties(
+        "AWS::SNS::Topic",
+        Match.objectLike({
+          TopicName: "alerts-topic.fifo",
+          DisplayName: "Alerts",
+          FifoTopic: true,
+          ContentBasedDeduplication: true,
+          FifoThroughputScope: "MessageGroup",
+          KmsMasterKeyId: "alias/aws/sns",
+          SignatureVersion: "2",
+          TracingConfig: "Active",
+          ArchivePolicy: {
+            MessageRetentionPeriod: "7",
+          },
+          DataProtectionPolicy: {
+            Name: "alerts-policy",
+          },
+          DeliveryStatusLogging: Match.arrayWith([
+            Match.objectLike({
+              Protocol: "lambda",
+              SuccessFeedbackSampleRate: "100",
+            }),
+          ]),
+        }),
+      );
+      template.hasResourceProperties(
+        "AWS::SNS::Subscription",
+        Match.objectLike({
+          Protocol: "lambda",
+          FilterPolicy: {
+            severity: ["high"],
+          },
+          RawMessageDelivery: true,
+        }),
+      );
+    });
   });
 
   describe("event wiring resources", () => {

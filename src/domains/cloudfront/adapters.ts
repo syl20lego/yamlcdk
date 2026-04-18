@@ -6,6 +6,9 @@ import type {
 } from "../adapters/types.js";
 import {
   CLOUDFRONT_CONFIG,
+  cloudfrontYamlcdkCachePoliciesSchema,
+  cloudfrontYamlcdkDistributionsSchema,
+  cloudfrontYamlcdkOriginRequestPoliciesSchema,
   type CloudFrontDomainConfig,
 } from "./model.js";
 
@@ -13,9 +16,15 @@ export function adaptCloudfrontDomainFromYamlcdk(
   config: NormalizedServiceConfig,
 ): CloudFrontDomainConfig {
   return {
-    cachePolicies: config.cdn.cachePolicies,
-    originRequestPolicies: config.cdn.originRequestPolicies,
-    distributions: config.cdn.distributions,
+    cachePolicies: cloudfrontYamlcdkCachePoliciesSchema.parse(
+      config.cdn.cachePolicies,
+    ),
+    originRequestPolicies: cloudfrontYamlcdkOriginRequestPoliciesSchema.parse(
+      config.cdn.originRequestPolicies,
+    ),
+    distributions: cloudfrontYamlcdkDistributionsSchema.parse(
+      config.cdn.distributions,
+    ),
   };
 }
 
@@ -47,4 +56,3 @@ export function writeCloudfrontServerlessDomainConfig(
     distributions: state.cloudfront.distributions,
   });
 }
-

@@ -82,6 +82,9 @@ Resources:
 
   EventsTopic:
     Type: AWS::SNS::Topic
+    Properties:
+      DisplayName: Demo events
+      TracingConfig: Active
 
   EventsToJobs:
     Type: AWS::SNS::Subscription
@@ -89,6 +92,7 @@ Resources:
       Protocol: sqs
       TopicArn: !Ref EventsTopic
       Endpoint: !GetAtt JobsQueue.Arn
+      RawMessageDelivery: true
 
   # ─── Event Source Mappings ─────────────────────────────────
 
@@ -187,4 +191,3 @@ Resources:
           CachePolicyId: !Ref ApiCachePolicy
           OriginRequestPolicyId: !Ref AllViewerPolicy
         Enabled: true
-

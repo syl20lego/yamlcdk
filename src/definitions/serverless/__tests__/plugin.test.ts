@@ -809,6 +809,93 @@ resources:
     );
   });
 
+  test("adapts extended SNS topic properties and subscription options from resources.Resources", () => {
+    const model = adaptServerlessConfig(
+      parseCfnYaml(`
+service: demo
+provider:
+  name: aws
+functions:
+  worker:
+    handler: src/worker.handler
+resources:
+  Resources:
+    AlertsTopic:
+      Type: AWS::SNS::Topic
+      Properties:
+        TopicName: alerts-topic.fifo
+        DisplayName: Alerts
+        FifoTopic: true
+        ContentBasedDeduplication: true
+        FifoThroughputScope: MessageGroup
+        KmsMasterKeyId: alias/aws/sns
+        SignatureVersion: "2"
+        TracingConfig: Active
+        ArchivePolicy:
+          MessageRetentionPeriod: "7"
+        DataProtectionPolicy:
+          Name: alerts-policy
+        DeliveryStatusLogging:
+          - Protocol: lambda
+            SuccessFeedbackSampleRate: 100
+        Tags:
+          - Key: Team
+            Value: platform
+    AlertsToWorker:
+      Type: AWS::SNS::Subscription
+      Properties:
+        Protocol: lambda
+        TopicArn: !Ref AlertsTopic
+        Endpoint: !GetAtt WorkerLambdaFunction.Arn
+        FilterPolicy:
+          severity:
+            - high
+        RawMessageDelivery: true
+`),
+      "serverless.yml",
+    );
+
+    const topicConfig = model.domainConfigs.require(SNS_CONFIG).topics.AlertsTopic;
+    expect(topicConfig).toEqual(
+      expect.objectContaining({
+        topicName: "alerts-topic.fifo",
+        displayName: "Alerts",
+        fifoTopic: true,
+        contentBasedDeduplication: true,
+        fifoThroughputScope: "MessageGroup",
+        kmsMasterKeyId: "alias/aws/sns",
+        signatureVersion: "2",
+        tracingConfig: "Active",
+        archivePolicy: { MessageRetentionPeriod: "7" },
+        dataProtectionPolicy: { Name: "alerts-policy" },
+        deliveryStatusLogging: [
+          {
+            protocol: "lambda",
+            successFeedbackSampleRate: "100",
+          },
+        ],
+        tags: {
+          Team: "platform",
+        },
+      }),
+    );
+    expect(topicConfig.subscriptions).toEqual(
+      expect.arrayContaining([
+        {
+          type: "lambda",
+          target: "worker",
+          filterPolicy: {
+            severity: ["high"],
+          },
+          rawMessageDelivery: true,
+        },
+      ]),
+    );
+    expect(model.functions.worker.events).toEqual(
+      expect.arrayContaining([{ type: "sns", topic: "AlertsTopic" }]),
+    );
+  });
+
   test("rejects custom resources that override generated function logical ids", () => {
     expect(() =>
       adaptServerlessConfig(

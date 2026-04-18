@@ -18,6 +18,7 @@ import type {
 } from "../sqs/model.js";
 
 export interface CloudFormationDomainConfigInput {
+  readonly [domainId: string]: unknown;
   readonly s3: S3DomainConfig;
   readonly dynamodb: DynamoDBDomainConfig;
   readonly sqs: SQSDomainConfig;
@@ -27,6 +28,7 @@ export interface CloudFormationDomainConfigInput {
 }
 
 export interface ServerlessDomainState {
+  [domainId: string]: unknown;
   s3: S3DomainConfig["buckets"];
   dynamodb: DynamoDBDomainConfig["tables"];
   sqs: SQSDomainConfig["queues"];
@@ -43,4 +45,3 @@ export function createEmptyServerlessDomainState(): ServerlessDomainState {
     cloudfront: { cachePolicies: {}, originRequestPolicies: {}, distributions: {} },
   };
 }
-

@@ -66,6 +66,8 @@ messaging:
     jobs: {}
   sns:
     events:
+      displayName: Demo events
+      tracingConfig: Active
       subscriptions:
         - type: sqs
           target: jobs

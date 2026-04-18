@@ -4,13 +4,17 @@ import type {
   CloudFormationDomainConfigInput,
   ServerlessDomainState,
 } from "../adapters/types.js";
-import { S3_CONFIG, type S3DomainConfig } from "./model.js";
+import {
+  S3_CONFIG,
+  s3YamlcdkStorageSchema,
+  type S3DomainConfig,
+} from "./model.js";
 
 export function adaptS3DomainFromYamlcdk(
   config: NormalizedServiceConfig,
 ): S3DomainConfig {
   return {
-    buckets: config.storage.s3,
+    buckets: s3YamlcdkStorageSchema.parse(config.storage.s3),
     cleanupRoleArn: config.provider.s3?.cleanupRoleArn,
   };
 }
@@ -34,4 +38,3 @@ export function writeS3ServerlessDomainConfig(
 ): void {
   domainConfigs.set(S3_CONFIG, { buckets: state.s3 });
 }
-

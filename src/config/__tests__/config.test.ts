@@ -306,4 +306,57 @@ describe("config validation", () => {
     const normalized = normalizeConfig(raw);
     expect(normalized.storage.dynamodb.users.stream).toBe("NEW_AND_OLD_IMAGES");
   });
+
+  test("supports extended messaging.sns topic properties", () => {
+    const raw = validateServiceConfig({
+      service: "demo",
+      messaging: {
+        sns: {
+          alerts: {
+            topicName: "alerts-topic.fifo",
+            displayName: "Alerts",
+            fifoTopic: true,
+            contentBasedDeduplication: true,
+            fifoThroughputScope: "MessageGroup",
+            kmsMasterKeyId: "alias/aws/sns",
+            signatureVersion: "2",
+            tracingConfig: "Active",
+            archivePolicy: { MessageRetentionPeriod: "7" },
+            dataProtectionPolicy: { Name: "alerts-policy" },
+            deliveryStatusLogging: [
+              {
+                protocol: "lambda",
+                successFeedbackSampleRate: "100",
+              },
+            ],
+            tags: {
+              Team: "platform",
+            },
+            subscriptions: [
+              {
+                type: "lambda",
+                target: "processor",
+                filterPolicy: {
+                  severity: ["high"],
+                },
+              },
+            ],
+          },
+        },
+      },
+      functions: {},
+    });
+
+    const normalized = normalizeConfig(raw);
+    expect(normalized.messaging.sns.alerts.fifoTopic).toBe(true);
+    expect(normalized.messaging.sns.alerts.subscriptions).toEqual([
+      {
+        type: "lambda",
+        target: "processor",
+        filterPolicy: {
+          severity: ["high"],
+        },
+      },
+    ]);
+  });
 });

@@ -4,18 +4,25 @@ import {
 } from "./apis/model.js";
 import {
   CLOUDFRONT_CONFIG,
+  cloudfrontYamlcdkCachePoliciesSchema,
+  cloudfrontYamlcdkDistributionsSchema,
+  cloudfrontYamlcdkOriginRequestPoliciesSchema,
 } from "./cloudfront/model.js";
 import {
   DYNAMODB_CONFIG,
+  dynamodbYamlcdkStorageSchema,
 } from "./dynamodb/model.js";
 import {
   S3_CONFIG,
+  s3YamlcdkStorageSchema,
 } from "./s3/model.js";
 import {
   SNS_CONFIG,
+  snsYamlcdkMessagingSchema,
 } from "./sns/model.js";
 import {
   SQS_CONFIG,
+  sqsYamlcdkMessagingSchema,
 } from "./sqs/model.js";
 import { apisDomain } from "./apis/compiler.js";
 import {
@@ -69,6 +76,14 @@ export const domainManifest: readonly DomainDescriptor[] = [
     role: "resource",
     plugin: s3Domain,
     configKey: S3_CONFIG,
+    yamlcdkSections: [
+      {
+        namespace: "storage",
+        key: "s3",
+        schema: s3YamlcdkStorageSchema,
+        createDefault: () => ({}),
+      },
+    ],
     adapters: {
       yamlcdk: adaptS3DomainFromYamlcdk,
       cloudformation: adaptS3DomainFromCloudFormation,
@@ -82,6 +97,14 @@ export const domainManifest: readonly DomainDescriptor[] = [
     role: "resource",
     plugin: dynamodbDomain,
     configKey: DYNAMODB_CONFIG,
+    yamlcdkSections: [
+      {
+        namespace: "storage",
+        key: "dynamodb",
+        schema: dynamodbYamlcdkStorageSchema,
+        createDefault: () => ({}),
+      },
+    ],
     adapters: {
       yamlcdk: adaptDynamodbDomainFromYamlcdk,
       cloudformation: adaptDynamodbDomainFromCloudFormation,
@@ -95,6 +118,14 @@ export const domainManifest: readonly DomainDescriptor[] = [
     role: "resource",
     plugin: sqsDomain,
     configKey: SQS_CONFIG,
+    yamlcdkSections: [
+      {
+        namespace: "messaging",
+        key: "sqs",
+        schema: sqsYamlcdkMessagingSchema,
+        createDefault: () => ({}),
+      },
+    ],
     adapters: {
       yamlcdk: adaptSqsDomainFromYamlcdk,
       cloudformation: adaptSqsDomainFromCloudFormation,
@@ -108,6 +139,14 @@ export const domainManifest: readonly DomainDescriptor[] = [
     role: "resource",
     plugin: snsDomain,
     configKey: SNS_CONFIG,
+    yamlcdkSections: [
+      {
+        namespace: "messaging",
+        key: "sns",
+        schema: snsYamlcdkMessagingSchema,
+        createDefault: () => ({}),
+      },
+    ],
     adapters: {
       yamlcdk: adaptSnsDomainFromYamlcdk,
       cloudformation: adaptSnsDomainFromCloudFormation,
@@ -148,6 +187,26 @@ export const domainManifest: readonly DomainDescriptor[] = [
     role: "resource",
     plugin: cloudfrontDomain,
     configKey: CLOUDFRONT_CONFIG,
+    yamlcdkSections: [
+      {
+        namespace: "cdn",
+        key: "cachePolicies",
+        schema: cloudfrontYamlcdkCachePoliciesSchema,
+        createDefault: () => ({}),
+      },
+      {
+        namespace: "cdn",
+        key: "originRequestPolicies",
+        schema: cloudfrontYamlcdkOriginRequestPoliciesSchema,
+        createDefault: () => ({}),
+      },
+      {
+        namespace: "cdn",
+        key: "distributions",
+        schema: cloudfrontYamlcdkDistributionsSchema,
+        createDefault: () => ({}),
+      },
+    ],
     adapters: {
       yamlcdk: adaptCloudfrontDomainFromYamlcdk,
       cloudformation: adaptCloudfrontDomainFromCloudFormation,

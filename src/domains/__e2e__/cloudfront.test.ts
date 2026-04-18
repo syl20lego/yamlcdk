@@ -1,9 +1,9 @@
 import { Match } from "aws-cdk-lib/assertions";
 import { describe, expect, test } from "vitest";
 import { synthServiceConfig } from "./helpers.js";
-import { buildApp } from "../../stack-builder.js";
-import { normalizeConfig } from "../../../config/normalize.js";
-import { validateServiceConfig } from "../../../config/schema.js";
+import { buildApp } from "../../compiler/stack-builder.js";
+import { normalizeConfig } from "../../config/normalize.js";
+import { validateServiceConfig } from "../../config/schema.js";
 import { Template } from "aws-cdk-lib/assertions";
 
 function synthWithCloudFront(

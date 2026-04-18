@@ -74,7 +74,7 @@ If you want to exercise deploy/diff/remove flows against AWS, make sure you also
   - `model.ts` - canonical `ServiceModel` and event/build/provider schemas
   - `stack-builder.ts` - compiler lifecycle orchestration
   - `plugins/` - domain/definition plugin contracts and registries
-  - `domains/` - compatibility wrappers for compiler domain plugin entry points
+  - `domains/` - native domain registry bridge (`index.ts`)
 - `src/domains/` - domain-first modules (`<domain>/model.ts`, `<domain>/compiler.ts`, `<domain>/adapters.ts`) and `manifest.ts`
   - `stack/` - shared compiler helpers and validation
 - `src/runtime/`
@@ -82,7 +82,7 @@ If you want to exercise deploy/diff/remove flows against AWS, make sure you also
   - `aws.ts` - CLI override resolution and AWS context checks
   - `cdk.ts` - synth/diff/deploy/destroy runtime wrappers
 - `src/**/__tests__/` - source-adjacent Vitest suites (`*.test.ts`)
-- `src/compiler/domains/__e2e__/` - one CDK-asserted end-to-end suite per compiler domain
+- `src/domains/__e2e__/` - one CDK-asserted end-to-end suite per compiler domain
 - `src/definitions/**/__e2e__/` - format-level end-to-end suites that load real yamlcdk, Serverless, and CloudFormation input through the definition registry before building the stack
   - organize these by definition section (`provider`, `functions`, `storage`, `messaging`, `events`, `iam`, `invalid`) and cover valid permutations plus invalid definitions
 - `dist/` - compiled output from `npm run build`; do not edit by hand
@@ -98,7 +98,7 @@ If you want to exercise deploy/diff/remove flows against AWS, make sure you also
 2. Make the schema/model change first.
 3. Update adaptation/normalization.
 4. Update the compiler/runtime behavior.
-5. Add or adjust tests in the nearest `src/**/__tests__/*.test.ts` suite, update `src/definitions/**/__e2e__/` when input-format loading behavior changes, and update `src/compiler/domains/__e2e__/` when domain stack behavior changes.
+5. Add or adjust tests in the nearest `src/**/__tests__/*.test.ts` suite, update `src/definitions/**/__e2e__/` when input-format loading behavior changes, and update `src/domains/__e2e__/` when domain stack behavior changes.
 6. Run:
 
    ```bash
@@ -146,7 +146,7 @@ Key files:
 - typed config keys: `src/compiler/plugins/domain-configs.ts`
 - domain-owned schemas/keys: `src/domains/<domain>/model.ts`
 - native domain manifest + ordering: `src/domains/manifest.ts`
-- native domain registry bridge: `src/compiler/domains/index.ts`
+- native domain registry + barrel: `src/domains/index.ts`
 - compiler lifecycle orchestration: `src/compiler/stack-builder.ts`
 
 ### Domain plugin lifecycle
@@ -188,14 +188,14 @@ Use them as intended:
 
 5. **Register it in order**
    - Update `src/domains/manifest.ts` (source of truth)
-   - `src/compiler/domains/index.ts` will pick up manifest-driven ordering
+   - `src/domains/index.ts` will pick up manifest-driven ordering
    - Ordering matters:
      - resource-creation domains before `functions`
      - binding domains after `functions`
 
 6. **Test it**
    - `src/compiler/plugins/__tests__/` for registration/order/schema-level behavior
-   - `src/compiler/domains/__e2e__/` for domain-specific CDK stack behavior
+   - `src/domains/__e2e__/` for domain-specific CDK stack behavior
    - `src/compiler/__tests__/stack-builder.test.ts` for cross-domain and deployment behavior
 
 ### Architectural expectations
@@ -313,19 +313,19 @@ What the current suites cover:
 - `src/compiler/__tests__/stack-builder.test.ts`
   - synthesized cross-domain stack behavior
   - deployment and synthesizer behavior
-- `src/compiler/domains/__e2e__/functions.test.ts`
+- `src/domains/__e2e__/functions.test.ts`
   - function synthesis and IAM wiring
-- `src/compiler/domains/__e2e__/s3.test.ts`
+- `src/domains/__e2e__/s3.test.ts`
   - bucket lifecycle settings and S3 event wiring
-- `src/compiler/domains/__e2e__/dynamodb.test.ts`
+- `src/domains/__e2e__/dynamodb.test.ts`
   - table options and DynamoDB stream wiring
-- `src/compiler/domains/__e2e__/sqs.test.ts`
+- `src/domains/__e2e__/sqs.test.ts`
   - queue options and SQS event wiring
-- `src/compiler/domains/__e2e__/sns.test.ts`
+- `src/domains/__e2e__/sns.test.ts`
   - topic subscriptions and SNS event wiring
-- `src/compiler/domains/__e2e__/eventbridge.test.ts`
+- `src/domains/__e2e__/eventbridge.test.ts`
   - EventBridge schedule and pattern rules
-- `src/compiler/domains/__e2e__/apis.test.ts`
+- `src/domains/__e2e__/apis.test.ts`
   - HTTP/REST API synthesis and API options
 - `src/definitions/yamlcdk/__tests__/plugin.test.ts`
   - yamlcdk definition plugin behavior

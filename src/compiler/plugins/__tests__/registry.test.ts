@@ -9,7 +9,7 @@ import type { ServiceModel } from "../../model.js";
 import {
   createNativeDomainRegistry,
   nativeDomains,
-} from "../../domains/index.js";
+} from "../../../domains/index.js";
 
 describe("DomainRegistry", () => {
   test("registers and retrieves plugins", () => {

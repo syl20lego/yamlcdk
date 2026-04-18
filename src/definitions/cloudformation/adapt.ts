@@ -64,6 +64,24 @@ interface CfnTemplate {
   Outputs?: Record<string, unknown>;
 }
 
+type SNSSubscriptionOptionValues = {
+  deliveryPolicy?: Record<string, unknown>;
+  filterPolicy?: Record<string, unknown>;
+  filterPolicyScope?: "MessageAttributes" | "MessageBody";
+  rawMessageDelivery?: boolean;
+  redrivePolicy?: Record<string, unknown>;
+  region?: string;
+  replayPolicy?: Record<string, unknown> | string;
+  subscriptionRoleArn?: string;
+};
+
+interface ExtractedSNSSubscription {
+  topicLogicalId: string;
+  protocol: string;
+  subscription: SNSSubscriptionConfig;
+  endpointLogicalId?: string;
+}
+
 // ─── Helpers ────────────────────────────────────────────────
 
 function getResourcesByType(
@@ -323,32 +341,127 @@ function extractSQSQueues(
 
 function extractSNSTopics(
   resources: Record<string, CfnResource>,
-  snsSubscriptions: Array<{
-    topicLogicalId: string;
-    protocol: string;
-    endpointLogicalId: string;
-  }>,
+  snsSubscriptions: ExtractedSNSSubscription[],
 ): Record<string, SNSTopicConfig> {
   const topics: Record<string, SNSTopicConfig> = {};
 
-  for (const [logicalId] of getResourcesByType(
+  for (const [logicalId, resource] of getResourcesByType(
     resources,
     "AWS::SNS::Topic",
   )) {
+    const p = props(resource);
+
+    const topic: SNSTopicConfig = {};
+    if (typeof p.TopicName === "string") {
+      topic.topicName = p.TopicName;
+    }
+    if (typeof p.DisplayName === "string") {
+      topic.displayName = p.DisplayName;
+    }
+    if (typeof p.FifoTopic === "boolean") {
+      topic.fifoTopic = p.FifoTopic;
+    }
+    if (typeof p.ContentBasedDeduplication === "boolean") {
+      topic.contentBasedDeduplication = p.ContentBasedDeduplication;
+    }
+    if (
+      p.FifoThroughputScope === "Topic" ||
+      p.FifoThroughputScope === "MessageGroup"
+    ) {
+      topic.fifoThroughputScope = p.FifoThroughputScope;
+    }
+    if (typeof p.KmsMasterKeyId === "string") {
+      topic.kmsMasterKeyId = p.KmsMasterKeyId;
+    }
+    if (typeof p.SignatureVersion === "string") {
+      topic.signatureVersion = p.SignatureVersion;
+    }
+    if (p.TracingConfig === "PassThrough" || p.TracingConfig === "Active") {
+      topic.tracingConfig = p.TracingConfig;
+    }
+
+    const archivePolicy =
+      p.ArchivePolicy && typeof p.ArchivePolicy === "object" && !Array.isArray(p.ArchivePolicy)
+        ? (p.ArchivePolicy as Record<string, unknown>)
+        : undefined;
+    if (archivePolicy) {
+      topic.archivePolicy = archivePolicy;
+    }
+
+    if (typeof p.DataProtectionPolicy === "string") {
+      topic.dataProtectionPolicy = p.DataProtectionPolicy;
+    } else if (
+      p.DataProtectionPolicy &&
+      typeof p.DataProtectionPolicy === "object" &&
+      !Array.isArray(p.DataProtectionPolicy)
+    ) {
+      topic.dataProtectionPolicy = p.DataProtectionPolicy as Record<string, unknown>;
+    }
+
+    if (Array.isArray(p.DeliveryStatusLogging)) {
+      const deliveryStatusLogging = p.DeliveryStatusLogging
+        .filter(
+          (entry): entry is Record<string, unknown> =>
+            entry !== null && typeof entry === "object" && !Array.isArray(entry),
+        )
+        .filter(
+          (entry) =>
+            typeof entry.Protocol === "string" && entry.Protocol.length > 0,
+        )
+        .map((entry) => {
+          const successFeedbackSampleRate = entry.SuccessFeedbackSampleRate;
+          const mapped: NonNullable<SNSTopicConfig["deliveryStatusLogging"]>[number] = {
+            protocol: entry.Protocol as string,
+            failureFeedbackRoleArn:
+              typeof entry.FailureFeedbackRoleArn === "string"
+                ? entry.FailureFeedbackRoleArn
+                : undefined,
+            successFeedbackRoleArn:
+              typeof entry.SuccessFeedbackRoleArn === "string"
+                ? entry.SuccessFeedbackRoleArn
+                : undefined,
+            successFeedbackSampleRate:
+              typeof successFeedbackSampleRate === "string"
+                ? successFeedbackSampleRate
+                : typeof successFeedbackSampleRate === "number"
+                  ? String(successFeedbackSampleRate)
+                  : undefined,
+          };
+          return mapped;
+        });
+      if (deliveryStatusLogging.length > 0) {
+        topic.deliveryStatusLogging = deliveryStatusLogging;
+      }
+    }
+
+    if (Array.isArray(p.Tags)) {
+      const tags: Record<string, string> = {};
+      for (const rawTag of p.Tags) {
+        if (
+          rawTag &&
+          typeof rawTag === "object" &&
+          !Array.isArray(rawTag) &&
+          typeof (rawTag as { Key?: unknown }).Key === "string" &&
+          typeof (rawTag as { Value?: unknown }).Value === "string"
+        ) {
+          tags[(rawTag as { Key: string }).Key] = (rawTag as { Value: string }).Value;
+        }
+      }
+      if (Object.keys(tags).length > 0) {
+        topic.tags = tags;
+      }
+    }
+
     const subs = snsSubscriptions
       .filter(
-        (s) => s.topicLogicalId === logicalId && s.protocol === "sqs",
+        (s) => s.topicLogicalId === logicalId,
       )
-      .map(
-        (s): SNSSubscriptionConfig => ({
-          type: "sqs",
-          target: s.endpointLogicalId,
-        }),
-      );
+      .map((s) => s.subscription);
+    if (subs.length > 0) {
+      topic.subscriptions = subs;
+    }
 
-    topics[logicalId] = {
-      subscriptions: subs.length > 0 ? subs : undefined,
-    };
+    topics[logicalId] = topic;
   }
 
   return topics;
@@ -390,16 +503,115 @@ function wireEventSourceMappings(
 function extractSNSSubscriptions(
   resources: Record<string, CfnResource>,
   resourceTypes: Map<string, string>,
-): Array<{
-  topicLogicalId: string;
-  protocol: string;
-  endpointLogicalId: string;
-}> {
-  const subscriptions: Array<{
-    topicLogicalId: string;
-    protocol: string;
-    endpointLogicalId: string;
-  }> = [];
+): ExtractedSNSSubscription[] {
+  const subscriptions: ExtractedSNSSubscription[] = [];
+
+  const parseSubscriptionOptions = (
+    properties: Record<string, unknown>,
+  ): SNSSubscriptionOptionValues => {
+    const options: SNSSubscriptionOptionValues = {};
+    if (
+      properties.DeliveryPolicy &&
+      typeof properties.DeliveryPolicy === "object" &&
+      !Array.isArray(properties.DeliveryPolicy)
+    ) {
+      options.deliveryPolicy = properties.DeliveryPolicy as Record<string, unknown>;
+    }
+    if (
+      properties.FilterPolicy &&
+      typeof properties.FilterPolicy === "object" &&
+      !Array.isArray(properties.FilterPolicy)
+    ) {
+      options.filterPolicy = properties.FilterPolicy as Record<string, unknown>;
+    }
+    if (
+      properties.FilterPolicyScope === "MessageAttributes" ||
+      properties.FilterPolicyScope === "MessageBody"
+    ) {
+      options.filterPolicyScope = properties.FilterPolicyScope;
+    }
+    if (typeof properties.RawMessageDelivery === "boolean") {
+      options.rawMessageDelivery = properties.RawMessageDelivery;
+    }
+    if (
+      properties.RedrivePolicy &&
+      typeof properties.RedrivePolicy === "object" &&
+      !Array.isArray(properties.RedrivePolicy)
+    ) {
+      options.redrivePolicy = properties.RedrivePolicy as Record<string, unknown>;
+    }
+    if (typeof properties.Region === "string") {
+      options.region = properties.Region;
+    }
+    if (typeof properties.ReplayPolicy === "string") {
+      options.replayPolicy = properties.ReplayPolicy;
+    } else if (
+      properties.ReplayPolicy &&
+      typeof properties.ReplayPolicy === "object" &&
+      !Array.isArray(properties.ReplayPolicy)
+    ) {
+      options.replayPolicy = properties.ReplayPolicy as Record<string, unknown>;
+    }
+    if (typeof properties.SubscriptionRoleArn === "string") {
+      options.subscriptionRoleArn = properties.SubscriptionRoleArn;
+    }
+    return options;
+  };
+
+  const parseSubscription = (
+    topicLogicalId: string,
+    protocolValue: unknown,
+    endpointValue: unknown,
+    options: SNSSubscriptionOptionValues,
+  ): ExtractedSNSSubscription | undefined => {
+    if (typeof protocolValue !== "string" || protocolValue.length === 0) {
+      return undefined;
+    }
+    const protocol = protocolValue.toLowerCase();
+
+    const endpointLogicalId = resolveLogicalId(endpointValue);
+    if (endpointLogicalId) {
+      const endpointType = resourceTypes.get(endpointLogicalId);
+      if (protocol === "lambda" && endpointType === "AWS::Lambda::Function") {
+        return {
+          topicLogicalId,
+          protocol,
+          endpointLogicalId,
+          subscription: {
+            type: "lambda",
+            target: endpointLogicalId,
+            ...options,
+          },
+        };
+      }
+      if (protocol === "sqs" && endpointType === "AWS::SQS::Queue") {
+        return {
+          topicLogicalId,
+          protocol,
+          endpointLogicalId,
+          subscription: {
+            type: "sqs",
+            target: endpointLogicalId,
+            ...options,
+          },
+        };
+      }
+    }
+
+    if (typeof endpointValue === "string") {
+      return {
+        topicLogicalId,
+        protocol,
+        subscription: {
+          protocol,
+          endpoint: endpointValue,
+          ...options,
+        },
+      };
+    }
+
+    return undefined;
+  };
 
   for (const [, resource] of getResourcesByType(
     resources,
@@ -407,22 +619,44 @@ function extractSNSSubscriptions(
   )) {
     const p = props(resource);
     const topicId = resolveLogicalId(p.TopicArn);
-    const endpointId = resolveLogicalId(p.Endpoint);
-    const protocol = p.Protocol as string | undefined;
+    if (!topicId) continue;
 
-    if (!topicId || !endpointId || !protocol) continue;
-
-    const endpointType = resourceTypes.get(endpointId);
-
-    // Lambda subscription → event on function
-    if (protocol === "lambda" && endpointType === "AWS::Lambda::Function") {
-      subscriptions.push({ topicLogicalId: topicId, protocol: "lambda", endpointLogicalId: endpointId });
-      continue;
+    const parsed = parseSubscription(
+      topicId,
+      p.Protocol,
+      p.Endpoint,
+      parseSubscriptionOptions(p),
+    );
+    if (parsed) {
+      subscriptions.push(parsed);
     }
+  }
 
-    // SQS subscription → topic config
-    if (protocol === "sqs" && endpointType === "AWS::SQS::Queue") {
-      subscriptions.push({ topicLogicalId: topicId, protocol: "sqs", endpointLogicalId: endpointId });
+  for (const [topicLogicalId, resource] of getResourcesByType(
+    resources,
+    "AWS::SNS::Topic",
+  )) {
+    const p = props(resource);
+    if (!Array.isArray(p.Subscription)) continue;
+
+    for (const inlineSub of p.Subscription) {
+      if (
+        inlineSub === null ||
+        typeof inlineSub !== "object" ||
+        Array.isArray(inlineSub)
+      ) {
+        continue;
+      }
+      const inline = inlineSub as Record<string, unknown>;
+      const parsed = parseSubscription(
+        topicLogicalId,
+        inline.Protocol,
+        inline.Endpoint,
+        {},
+      );
+      if (parsed) {
+        subscriptions.push(parsed);
+      }
     }
   }
 
@@ -430,15 +664,15 @@ function extractSNSSubscriptions(
 }
 
 function wireSNSLambdaSubscriptions(
-  subscriptions: Array<{
-    topicLogicalId: string;
-    protocol: string;
-    endpointLogicalId: string;
-  }>,
+  subscriptions: ExtractedSNSSubscription[],
   functions: Record<string, FunctionModel>,
 ): void {
   for (const sub of subscriptions) {
-    if (sub.protocol === "lambda" && functions[sub.endpointLogicalId]) {
+    if (
+      sub.protocol === "lambda" &&
+      sub.endpointLogicalId &&
+      functions[sub.endpointLogicalId]
+    ) {
       functions[sub.endpointLogicalId].events.push(
         createSnsEvent(sub.topicLogicalId),
       );

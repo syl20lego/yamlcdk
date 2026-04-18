@@ -4,12 +4,16 @@ import type {
   CloudFormationDomainConfigInput,
   ServerlessDomainState,
 } from "../adapters/types.js";
-import { SNS_CONFIG, type SNSDomainConfig } from "./model.js";
+import {
+  SNS_CONFIG,
+  snsYamlcdkMessagingSchema,
+  type SNSDomainConfig,
+} from "./model.js";
 
 export function adaptSnsDomainFromYamlcdk(
   config: NormalizedServiceConfig,
 ): SNSDomainConfig {
-  return { topics: config.messaging.sns };
+  return { topics: snsYamlcdkMessagingSchema.parse(config.messaging.sns) };
 }
 
 export function adaptSnsDomainFromCloudFormation(
@@ -31,4 +35,3 @@ export function writeSnsServerlessDomainConfig(
 ): void {
   domainConfigs.set(SNS_CONFIG, { topics: state.sns });
 }
-

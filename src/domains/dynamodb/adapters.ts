@@ -6,13 +6,14 @@ import type {
 } from "../adapters/types.js";
 import {
   DYNAMODB_CONFIG,
+  dynamodbYamlcdkStorageSchema,
   type DynamoDBDomainConfig,
 } from "./model.js";
 
 export function adaptDynamodbDomainFromYamlcdk(
   config: NormalizedServiceConfig,
 ): DynamoDBDomainConfig {
-  return { tables: config.storage.dynamodb };
+  return { tables: dynamodbYamlcdkStorageSchema.parse(config.storage.dynamodb) };
 }
 
 export function adaptDynamodbDomainFromCloudFormation(
@@ -34,4 +35,3 @@ export function writeDynamodbServerlessDomainConfig(
 ): void {
   domainConfigs.set(DYNAMODB_CONFIG, { tables: state.dynamodb });
 }
-
