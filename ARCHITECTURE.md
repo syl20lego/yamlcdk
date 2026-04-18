@@ -1,6 +1,6 @@
 # yamlcdk architecture
 
-This document describes the **current pluginized architecture** implemented in this repository. It is intentionally aligned with the code under `src/compiler/plugins/`, `src/compiler/domains/`, `src/definitions/`, `src/config/`, and `src/runtime/`.
+This document describes the **current pluginized architecture** implemented in this repository. It is intentionally aligned with the code under `src/compiler/plugins/`, `src/domains/`, `src/definitions/`, `src/config/`, and `src/runtime/`.
 
 At a high level, `yamlcdk` is a compiler pipeline:
 
@@ -40,7 +40,7 @@ flowchart TD
     Build["Compiler core<br/>src/compiler/stack-builder.ts<br/>buildApp + ServiceStack"]
     DomainRegistry["DomainRegistry<br/>created by<br/>createNativeDomainRegistry()"]
     PluginRegistry["PluginRegistry<br/>aggregate holder"]
-    Domains["Native domain plugins<br/>src/compiler/domains/*.ts"]
+    Domains["Native domain plugins<br/>src/domains/*/compiler.ts"]
     CDK["CDK app / template / deploy<br/>src/runtime/cdk.ts"]
 
     CLI --> Loader
@@ -107,7 +107,7 @@ The compiler core lives mostly in:
 - `src/compiler/model.ts`
 - `src/compiler/stack-builder.ts`
 - `src/compiler/plugins/*.ts`
-- `src/compiler/domains/*.ts`
+- `src/domains/*/compiler.ts`
 
 Its job is to orchestrate a domain-agnostic lifecycle and provide shared compiler state:
 
@@ -177,7 +177,7 @@ This is the core mechanism that keeps the canonical model open to new domains:
 - a domain plugin reads its slice with `get()` or `require()`,
 - optional Zod schemas attached to keys validate values at write time.
 
-Native keys are defined in `src/compiler/plugins/native-domain-configs.ts`:
+Native keys are defined in domain-owned model modules under `src/domains/<domain>/model.ts`:
 
 - `S3_CONFIG`
 - `DYNAMODB_CONFIG`
@@ -228,7 +228,7 @@ All built-in definition plugins provide `generateStarter()`, which is what `src/
 
 Domain plugins own the **model-to-CDK** step for a specific infrastructure area.
 
-Current native domains are registered from `src/compiler/domains/index.ts`:
+Current native domains are declared in `src/domains/manifest.ts` and registered by `src/domains/index.ts`:
 
 1. `s3Domain`
 2. `dynamodbDomain`
@@ -257,7 +257,7 @@ Properties of the current implementation:
 - `all()` returns plugins in insertion order,
 - insertion order is meaningful because the compiler executes lifecycle phases in that order.
 
-This registry is actively used today. `createNativeDomainRegistry()` in `src/compiler/domains/index.ts` registers the native domains and hands the registry to `ServiceStack`.
+This registry is actively used today. `createNativeDomainRegistry()` in `src/domains/index.ts` registers the ordered plugins derived from `src/domains/manifest.ts` and hands the registry to `ServiceStack`.
 
 ### `DefinitionRegistry`
 
@@ -311,7 +311,7 @@ The load stage has multiple sub-steps. For the **yamlcdk format**:
    - `stackName` defaulting to a sanitized `<service>-<stage>` form
    - empty objects for `functions`, `storage`, `messaging`, and `iam`
 4. `adaptConfig()` in `src/definitions/yamlcdk/plugin.ts` converts `NormalizedServiceConfig` into the canonical `ServiceModel`.
-5. `adaptDomainConfigs()` writes native domain slices into `DomainConfigs`.
+5. `adaptDomainConfigsFromYamlcdk()` (`src/definitions/yamlcdk/domain-adapters.ts`) writes native domain slices into `DomainConfigs`.
 6. `loadModel()` returns the parsed model.
 7. CLI commands that accept AWS flags call `resolveModelOverrides()` and `assertModelResolution()` from `src/runtime/aws.ts`.
 
@@ -374,7 +374,7 @@ Binding is where event-producing declarations become real connections:
 
 ## Native domain plugins and why ordering matters
 
-The native domain list in `src/compiler/domains/index.ts` is not cosmetic. `DomainRegistry.all()` preserves the registration order, and `ServiceStack` runs every lifecycle phase in that order.
+The native domain order in `src/domains/manifest.ts` is not cosmetic. `DomainRegistry.all()` preserves the manifest-derived registration order, and `ServiceStack` runs every lifecycle phase in that order.
 
 Current order:
 
@@ -385,6 +385,7 @@ Current order:
 5. `functions`
 6. `eventbridge`
 7. `apis`
+8. `cloudfront`
 
 Why the current order matters:
 
@@ -400,7 +401,7 @@ Why the current order matters:
 - **API and event binding domains are intentionally later.**  
   `eventbridgeDomain` and `apisDomain` do not own earlier resource creation; they consume the aggregated function event bindings after the function resources exist.
 
-The current system does **not** declare dependencies between domains. Ordering is a hardcoded policy in `nativeDomains`, so maintainers should treat reorderings as semantic changes.
+The current system does **not** declare dependencies between domains. Ordering is an explicit manifest policy (`src/domains/manifest.ts`), so maintainers should treat reorderings as semantic changes.
 
 ## Zod validation boundaries and schema-first typing
 
@@ -449,7 +450,7 @@ One nuance matters here: `DomainConfigs` is a runtime class instance, so it is n
 
 ### 4. Domain-config boundary
 
-`src/compiler/plugins/native-domain-configs.ts` defines per-domain schemas, and `DomainConfigs.set()` validates values when the key carries a schema.
+Domain-owned model modules (`src/domains/<domain>/model.ts`) define per-domain schemas, and `DomainConfigs.set()` validates values when the key carries a schema.
 
 That means native domain config validation happens at adaptation time, before domain plugins read anything:
 
@@ -531,7 +532,7 @@ This is the most complete extension mechanism today:
 1. implement `DomainPlugin`,
 2. define a `DomainConfigKey<T>` and optional schema if the domain needs config,
 3. have a definition plugin populate that config,
-4. register the domain in `nativeDomains` inside `src/compiler/domains/index.ts`.
+4. register the domain in `src/domains/manifest.ts` (the compiler registry bridge consumes this manifest).
 
 This is how the existing native domains work.
 
@@ -590,16 +591,21 @@ src/
 │   └── schema.ts                   # Raw/normalized Zod schemas
 ├── definitions/
 │   ├── registry.ts                # Shared DefinitionRegistry setup
+│   ├── domain-adapter-types.ts    # CloudFormationDomainConfigInput, ServerlessDomainState
+│   ├── shared-event-adapters.ts   # Shared event mapping helpers
 │   ├── yamlcdk/
 │   │   ├── plugin.ts               # yamlcdkDefinitionPlugin + adaptConfig()
+│   │   ├── domain-adapters.ts      # yamlcdk → DomainConfigs adaptation
 │   │   └── index.ts                # Re-exports
 │   ├── serverless/
 │   │   ├── adapt.ts                # Serverless YAML -> ServiceModel adaptation
+│   │   ├── domain-adapters.ts      # ServerlessDomainState ↔ DomainConfigs adaptation
 │   │   ├── plugin.ts               # serverlessDefinitionPlugin
 │   │   └── index.ts                # Re-exports
 │   ├── cloudformation/
 │   │   ├── cfn-yaml.ts             # Custom js-yaml schema for CF intrinsic functions
 │   │   ├── adapt.ts                # CF template -> ServiceModel adaptation
+│   │   ├── domain-adapters.ts      # CloudFormation input → DomainConfigs adaptation
 │   │   ├── plugin.ts               # cloudformationDefinitionPlugin
 │   │   └── index.ts                # Re-exports
 │   └── variables/
@@ -612,21 +618,16 @@ src/
 │   │   ├── definition-plugin.ts    # DefinitionPlugin contract
 │   │   ├── domain-plugin.ts        # DomainPlugin, CompilationContext, EventBinding
 │   │   ├── domain-configs.ts       # DomainConfigs and typed keys
-│   │   ├── native-domain-configs.ts# Native domain config schemas/keys
 │   │   ├── registry.ts             # DomainRegistry, DefinitionRegistry, PluginRegistry
-│   │   └── index.ts                # Public plugin exports
-│   ├── domains/
-│   │   ├── index.ts                # nativeDomains ordering + registry creation
-│   │   ├── s3.ts                   # Buckets + S3 notifications
-│   │   ├── dynamodb.ts             # Tables + DynamoDB stream bindings
-│   │   ├── sqs.ts                  # Queues + SQS event source bindings
-│   │   ├── sns.ts                  # Topics + SNS->SQS subscriptions + Lambda subscriptions
-│   │   ├── functions.ts            # Lambdas + IAM + EventBinding production
-│   │   ├── eventbridge.ts          # EventBridge rule bindings
-│   │   └── apis.ts                 # HTTP/REST API binding and outputs
+│   │   └── index.ts                # Public plugin exports (domain models + contracts)
 │   └── stack/
 │       ├── helpers.ts              # Shared helpers such as withStageName() and IAM ref resolution
 │       └── validation.ts           # Deployment-mode validation
+├── domains/
+│   ├── manifest.ts                 # Domain descriptors + ordering
+│   └── <domain>/
+│       ├── model.ts                # Domain-owned schemas/types/config key
+│       └── compiler.ts             # Domain compiler plugin entrypoint
 └── runtime/
     ├── aws.ts                      # AWS override validation and model resolution
     ├── build.ts                    # Function build preparation

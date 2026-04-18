@@ -12,7 +12,7 @@ import type {
 } from "./plugins/index.js";
 import { DomainConfigs } from "./plugins/index.js";
 import type { DomainRegistry } from "./plugins/registry.js";
-import { createNativeDomainRegistry } from "./domains/index.js";
+import { createNativeDomainRegistry } from "../domains/index.js";
 import { createStackSynthesizer } from "./synthesizer.js";
 import { validateDeploymentMode } from "./stack/validation.js";
 import { adaptConfig } from "../definitions/yamlcdk/plugin.js";

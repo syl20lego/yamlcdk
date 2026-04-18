@@ -2,14 +2,14 @@ import * as cloudfront from "aws-cdk-lib/aws-cloudfront";
 import * as origins from "aws-cdk-lib/aws-cloudfront-origins";
 import * as acm from "aws-cdk-lib/aws-certificatemanager";
 import cdk from "aws-cdk-lib";
-import { tryGetLogicalId } from "../stack/helpers.js";
-import { CLOUDFRONT_CONFIG } from "../plugins/index.js";
+import { tryGetLogicalId } from "../../compiler/stack/helpers.js";
+import { CLOUDFRONT_CONFIG } from "./model.js";
 import type {
   CloudFrontCachePolicyConfig,
   CloudFrontDistributionConfig,
   CloudFrontOriginRequestPolicyConfig,
-} from "../plugins/index.js";
-import type { DomainPlugin, DomainValidationContribution } from "../plugins/index.js";
+} from "./model.js";
+import type { DomainPlugin, DomainValidationContribution } from "../../compiler/plugins/index.js";
 
 // UUID pattern — used to detect managed (pre-existing) policy IDs
 const UUID_RE =
@@ -460,3 +460,4 @@ export const cloudfrontDomain: DomainPlugin = {
     return contributions;
   },
 };
+

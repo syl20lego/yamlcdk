@@ -10,17 +10,17 @@ import {
   resolveIamPolicy,
   tryGetLogicalId,
   withStageName,
-} from "../stack/helpers.js";
+} from "../../compiler/stack/helpers.js";
 import type {
   DomainPlugin,
   EventBinding,
   DomainValidationContribution,
-} from "../plugins/index.js";
+} from "../../compiler/plugins/index.js";
 import type {
   EventDeclaration,
   FunctionUrlConfig,
   FunctionUrlInvokeMode,
-} from "../model.js";
+} from "../../compiler/model.js";
 import type { EnvValue } from "../../schema/cfn-env.js";
 import type { Construct } from "constructs";
 
@@ -407,3 +407,4 @@ export const functionsDomain: DomainPlugin = {
     return contributions;
   },
 };
+

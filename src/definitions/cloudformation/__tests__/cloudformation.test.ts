@@ -12,10 +12,16 @@ import {
 } from "../index.js";
 import {
   S3_CONFIG,
+} from "../../../domains/s3/model.js";
+import {
   DYNAMODB_CONFIG,
+} from "../../../domains/dynamodb/model.js";
+import {
   SQS_CONFIG,
+} from "../../../domains/sqs/model.js";
+import {
   SNS_CONFIG,
-} from "../../../compiler/plugins/native-domain-configs.js";
+} from "../../../domains/sns/model.js";
 import { definitionRegistry } from "../../registry.js";
 import {writeTmpYaml} from "../../test-utils/e2e.js";
 
@@ -438,6 +444,103 @@ Resources:
       type: "sqs",
       target: "JobsQueue",
     });
+  });
+
+  test("extracts extended SNS topic properties and subscription options", () => {
+    const parsed = parseCfnYaml(`
+AWSTemplateFormatVersion: "2010-09-09"
+Metadata:
+  yamlcdk:
+    service: demo
+Resources:
+  ProcessorFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      Handler: src/processor.handler
+  JobsQueue:
+    Type: AWS::SQS::Queue
+  AlertsTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      TopicName: alerts-topic.fifo
+      DisplayName: Alerts
+      FifoTopic: true
+      ContentBasedDeduplication: true
+      FifoThroughputScope: MessageGroup
+      KmsMasterKeyId: alias/aws/sns
+      SignatureVersion: "2"
+      TracingConfig: Active
+      ArchivePolicy:
+        MessageRetentionPeriod: "7"
+      DataProtectionPolicy:
+        Name: alerts-policy
+      DeliveryStatusLogging:
+        - Protocol: lambda
+          SuccessFeedbackSampleRate: 100
+      Tags:
+        - Key: Team
+          Value: platform
+      Subscription:
+        - Protocol: sqs
+          Endpoint: !GetAtt JobsQueue.Arn
+  AlertsToProcessor:
+    Type: AWS::SNS::Subscription
+    Properties:
+      Protocol: lambda
+      TopicArn: !Ref AlertsTopic
+      Endpoint: !GetAtt ProcessorFunction.Arn
+      FilterPolicy:
+        severity:
+          - high
+      RawMessageDelivery: true
+`);
+    const model = adaptCfnTemplate(parsed, "t.yml");
+    const snsConfig = model.domainConfigs.require(SNS_CONFIG);
+
+    expect(snsConfig.topics.AlertsTopic).toEqual(
+      expect.objectContaining({
+        topicName: "alerts-topic.fifo",
+        displayName: "Alerts",
+        fifoTopic: true,
+        contentBasedDeduplication: true,
+        fifoThroughputScope: "MessageGroup",
+        kmsMasterKeyId: "alias/aws/sns",
+        signatureVersion: "2",
+        tracingConfig: "Active",
+        archivePolicy: { MessageRetentionPeriod: "7" },
+        dataProtectionPolicy: { Name: "alerts-policy" },
+        deliveryStatusLogging: [
+          {
+            protocol: "lambda",
+            successFeedbackSampleRate: "100",
+          },
+        ],
+        tags: {
+          Team: "platform",
+        },
+      }),
+    );
+    expect(snsConfig.topics.AlertsTopic.subscriptions).toEqual(
+      expect.arrayContaining([
+        {
+          type: "sqs",
+          target: "JobsQueue",
+        },
+        {
+          type: "lambda",
+          target: "ProcessorFunction",
+          filterPolicy: {
+            severity: ["high"],
+          },
+          rawMessageDelivery: true,
+        },
+      ]),
+    );
+
+    const processorEvents = model.functions.ProcessorFunction.events;
+    expect(processorEvents).toEqual(
+      expect.arrayContaining([{ type: "sns", topic: "AlertsTopic" }]),
+    );
   });
 });
 

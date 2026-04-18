@@ -1,10 +1,10 @@
 import cdk from "aws-cdk-lib";
 import * as s3 from "aws-cdk-lib/aws-s3";
 import * as s3n from "aws-cdk-lib/aws-s3-notifications";
-import { withStageName } from "../stack/helpers.js";
-import { normalizeManagedResourceRef } from "../resource-refs.js";
-import { S3_CONFIG } from "../plugins/native-domain-configs.js";
-import type { DomainPlugin } from "../plugins/index.js";
+import { withStageName } from "../../compiler/stack/helpers.js";
+import { normalizeManagedResourceRef } from "../../compiler/resource-refs.js";
+import { S3_CONFIG } from "./model.js";
+import type { DomainPlugin } from "../../compiler/plugins/index.js";
 
 const S3_EVENT_MAP: Record<string, s3.EventType> = {
   "s3:ObjectCreated:*": s3.EventType.OBJECT_CREATED,
@@ -87,3 +87,4 @@ export const s3Domain: DomainPlugin = {
     }
   },
 };
+

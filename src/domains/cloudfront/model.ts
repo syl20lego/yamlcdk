@@ -1,45 +1,21 @@
 import { z } from "zod";
-
-export const dynamodbKeySchema = z.object({
-  name: z.string().min(1),
-  type: z.enum(["string", "number", "binary"]),
-});
-
-export const dynamodbTableSchema = z.object({
-  partitionKey: dynamodbKeySchema,
-  sortKey: dynamodbKeySchema.optional(),
-  billingMode: z.enum(["PAY_PER_REQUEST", "PROVISIONED"]).optional(),
-  removalPolicy: z.enum(["DESTROY", "RETAIN"]).optional(),
-  stream: z
-    .enum(["NEW_IMAGE", "OLD_IMAGE", "NEW_AND_OLD_IMAGES", "KEYS_ONLY"])
-    .optional(),
-});
-
-export const s3BucketSchema = z.object({
-  versioned: z.boolean().optional(),
-  autoDeleteObjects: z.boolean().optional(),
-});
-
-export const sqsQueueSchema = z.object({
-  visibilityTimeout: z.number().int().min(0).max(43200).optional(),
-});
-
-export const snsSubscriptionSchema = z.object({
-  type: z.literal("sqs"),
-  target: z.string().min(1),
-});
-
-export const snsTopicSchema = z.object({
-  subscriptions: z.array(snsSubscriptionSchema).optional(),
-});
-
-// ─── CloudFront ──────────────────────────────────────────────
+import { createDomainConfigKey } from "../../compiler/plugins/domain-configs.js";
 
 export const cachePolicyCacheHeaderBehaviorSchema = z.enum(["none", "whitelist"]);
-export const cachePolicyCacheCookieBehaviorSchema = z.enum(["none", "all", "whitelist", "allExcept"]);
-export const cachePolicyCacheQueryStringBehaviorSchema = z.enum(["none", "all", "whitelist", "allExcept"]);
+export const cachePolicyCacheCookieBehaviorSchema = z.enum([
+  "none",
+  "all",
+  "whitelist",
+  "allExcept",
+]);
+export const cachePolicyCacheQueryStringBehaviorSchema = z.enum([
+  "none",
+  "all",
+  "whitelist",
+  "allExcept",
+]);
 
-export const cachePolicySchema = z.object({
+export const cachePolicyConfigSchema = z.object({
   comment: z.string().optional(),
   defaultTtl: z.number().int().min(0).optional(),
   minTtl: z.number().int().min(0).optional(),
@@ -66,16 +42,27 @@ export const cachePolicySchema = z.object({
   enableBrotli: z.boolean().optional(),
 });
 
+export type CloudFrontCachePolicyConfig = z.infer<typeof cachePolicyConfigSchema>;
+
 export const originRequestPolicyHeaderBehaviorSchema = z.enum([
   "none",
   "allViewer",
   "whitelist",
   "allViewerAndWhitelistCloudFront",
 ]);
-export const originRequestPolicyCookieBehaviorSchema = z.enum(["none", "all", "whitelist", "allExcept"]);
-export const originRequestPolicyQueryStringBehaviorSchema = z.enum(["none", "all", "whitelist"]);
+export const originRequestPolicyCookieBehaviorSchema = z.enum([
+  "none",
+  "all",
+  "whitelist",
+  "allExcept",
+]);
+export const originRequestPolicyQueryStringBehaviorSchema = z.enum([
+  "none",
+  "all",
+  "whitelist",
+]);
 
-export const originRequestPolicySchema = z.object({
+export const originRequestPolicyConfigSchema = z.object({
   comment: z.string().optional(),
   headersConfig: z
     .object({
@@ -97,12 +84,11 @@ export const originRequestPolicySchema = z.object({
     .optional(),
 });
 
+export type CloudFrontOriginRequestPolicyConfig = z.infer<typeof originRequestPolicyConfigSchema>;
+
 export const distributionOriginSchema = z.object({
   id: z.string().min(1),
-  domainName: z.union([
-    z.string().min(1),
-    z.record(z.string(), z.unknown()),
-  ]),
+  domainName: z.union([z.string().min(1), z.record(z.string(), z.unknown())]),
   httpPort: z.number().int().min(1).max(65535).optional(),
   httpsPort: z.number().int().min(1).max(65535).optional(),
   originProtocolPolicy: z
@@ -120,10 +106,12 @@ export const distributionBehaviorSchema = z.object({
   pathPattern: z.string().min(1).optional(),
 });
 
-export const distributionSchema = z.object({
+export const distributionConfigSchema = z.object({
   comment: z.string().optional(),
   enabled: z.boolean().optional(),
-  priceClass: z.enum(["PriceClass_All", "PriceClass_200", "PriceClass_100"]).optional(),
+  priceClass: z
+    .enum(["PriceClass_All", "PriceClass_200", "PriceClass_100"])
+    .optional(),
   httpVersion: z.enum(["http1.1", "http2", "http2and3", "http3"]).optional(),
   origins: z.array(distributionOriginSchema).min(1),
   defaultBehavior: distributionBehaviorSchema,
@@ -132,3 +120,31 @@ export const distributionSchema = z.object({
   certificateArn: z.string().optional(),
   webAclId: z.string().optional(),
 });
+
+export type CloudFrontDistributionConfig = z.infer<typeof distributionConfigSchema>;
+
+export const cloudfrontYamlcdkCachePoliciesSchema = z.record(
+  z.string(),
+  cachePolicyConfigSchema,
+);
+export const cloudfrontYamlcdkOriginRequestPoliciesSchema = z.record(
+  z.string(),
+  originRequestPolicyConfigSchema,
+);
+export const cloudfrontYamlcdkDistributionsSchema = z.record(
+  z.string(),
+  distributionConfigSchema,
+);
+
+export const cloudfrontDomainConfigSchema = z.object({
+  cachePolicies: cloudfrontYamlcdkCachePoliciesSchema,
+  originRequestPolicies: cloudfrontYamlcdkOriginRequestPoliciesSchema,
+  distributions: cloudfrontYamlcdkDistributionsSchema,
+});
+
+export type CloudFrontDomainConfig = z.infer<typeof cloudfrontDomainConfigSchema>;
+
+export const CLOUDFRONT_CONFIG = createDomainConfigKey(
+  "cloudfront",
+  cloudfrontDomainConfigSchema,
+);

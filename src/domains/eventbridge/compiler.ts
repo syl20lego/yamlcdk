@@ -1,7 +1,7 @@
 import * as events from "aws-cdk-lib/aws-events";
 import * as targets from "aws-cdk-lib/aws-events-targets";
-import { withStageName } from "../stack/helpers.js";
-import type { DomainPlugin } from "../plugins/index.js";
+import { withStageName } from "../../compiler/stack/helpers.js";
+import type { DomainPlugin } from "../../compiler/plugins/index.js";
 
 export const eventbridgeDomain: DomainPlugin = {
   name: "eventbridge",
@@ -41,3 +41,4 @@ export const eventbridgeDomain: DomainPlugin = {
     }
   },
 };
+

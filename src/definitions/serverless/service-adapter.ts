@@ -9,22 +9,7 @@ import type {
 } from "../../compiler/model.js";
 import { parseServiceModel } from "../../compiler/model.js";
 import { DomainConfigs } from "../../compiler/plugins/index.js";
-import {
-  APIS_CONFIG,
-  CLOUDFRONT_CONFIG,
-  DYNAMODB_CONFIG,
-  S3_CONFIG,
-  SNS_CONFIG,
-  SQS_CONFIG,
-  type DynamoDBTableConfig,
-  type S3BucketConfig,
-  type SNSTopicConfig,
-  type SQSQueueConfig,
-  type CloudFrontCachePolicyConfig,
-  type CloudFrontDistributionConfig,
-  type CloudFrontOriginRequestPolicyConfig,
-} from "../../compiler/plugins/index.js";
-import { adaptCfnTemplate } from "../cloudformation/adapt.js";
+import { adaptCfnTemplate } from "../cloudformation/index.js";
 import { parseCfnYaml, resolveLogicalId } from "../cloudformation/cfn-yaml.js";
 import {
   appendUniqueEvent,
@@ -38,6 +23,14 @@ import {
 } from "../shared-event-adapters.js";
 import { resolveDefinitionVariables } from "../variables/resolve.js";
 import { isCfnIntrinsicEnv, type EnvValue } from "../../schema/cfn-env.js";
+import {
+  type ServerlessDomainState as DomainState,
+  createEmptyServerlessDomainState,
+} from "../domain-adapter-types.js";
+import {
+  readServerlessDomainStateFromConfigs,
+  writeServerlessDomainStateToConfigs,
+} from "./domain-adapters.js";
 
 interface CfnResource {
   Type: string;
@@ -67,18 +60,6 @@ interface TopLevelAdaptation {
   functions: Record<string, FunctionModel>;
   domainConfigs: DomainConfigs;
   functionLogicalIds: Map<string, string>;
-}
-
-interface DomainState {
-  s3: Record<string, S3BucketConfig>;
-  dynamodb: Record<string, DynamoDBTableConfig>;
-  sqs: Record<string, SQSQueueConfig>;
-  sns: Record<string, SNSTopicConfig>;
-  cloudfront: {
-    cachePolicies: Record<string, CloudFrontCachePolicyConfig>;
-    originRequestPolicies: Record<string, CloudFrontOriginRequestPolicyConfig>;
-    distributions: Record<string, CloudFrontDistributionConfig>;
-  };
 }
 
 const SERVERLESS_URL_CORS_ALLOW_ALL_HEADERS = [
@@ -221,44 +202,6 @@ function inferBuildMode(handler: string): FunctionModel["build"] {
   return { mode: fs.existsSync(absTs) ? "typescript" : "none" };
 }
 
-function createEmptyDomainState(): DomainState {
-  return {
-    s3: {},
-    dynamodb: {},
-    sqs: {},
-    sns: {},
-    cloudfront: { cachePolicies: {}, originRequestPolicies: {}, distributions: {} },
-  };
-}
-
-function readDomainState(domainConfigs: DomainConfigs): DomainState {
-  const cf = domainConfigs.get(CLOUDFRONT_CONFIG);
-  return {
-    s3: domainConfigs.get(S3_CONFIG)?.buckets ?? {},
-    dynamodb: domainConfigs.get(DYNAMODB_CONFIG)?.tables ?? {},
-    sqs: domainConfigs.get(SQS_CONFIG)?.queues ?? {},
-    sns: domainConfigs.get(SNS_CONFIG)?.topics ?? {},
-    cloudfront: {
-      cachePolicies: cf?.cachePolicies ?? {},
-      originRequestPolicies: cf?.originRequestPolicies ?? {},
-      distributions: cf?.distributions ?? {},
-    },
-  };
-}
-
-function writeDomainState(domainConfigs: DomainConfigs, state: DomainState): void {
-  domainConfigs.set(S3_CONFIG, { buckets: state.s3 });
-  domainConfigs.set(DYNAMODB_CONFIG, { tables: state.dynamodb });
-  domainConfigs.set(SQS_CONFIG, { queues: state.sqs });
-  domainConfigs.set(SNS_CONFIG, { topics: state.sns });
-  domainConfigs.set(APIS_CONFIG, { restApi: undefined });
-  domainConfigs.set(CLOUDFRONT_CONFIG, {
-    cachePolicies: state.cloudfront.cachePolicies,
-    originRequestPolicies: state.cloudfront.originRequestPolicies,
-    distributions: state.cloudfront.distributions,
-  });
-}
-
 function mergeFunctionUrl(
   functionName: string,
   primary: FunctionUrlConfig | undefined,
@@ -301,9 +244,9 @@ function mergeFlatConfig<T extends Record<string, unknown>>(
 
 function mergeSnsTopicConfig(
   name: string,
-  primary: SNSTopicConfig | undefined,
-  incoming: SNSTopicConfig | undefined,
-): SNSTopicConfig | undefined {
+  primary: DomainState["sns"][string] | undefined,
+  incoming: DomainState["sns"][string] | undefined,
+): DomainState["sns"][string] | undefined {
   const merged = mergeFlatConfig("SNS topic", name, primary, incoming);
   if (!merged) return undefined;
 
@@ -322,6 +265,30 @@ function mergeSnsTopicConfig(
   );
 
   return { ...merged, subscriptions: uniqueSubscriptions };
+}
+
+function remapSnsLambdaSubscriptionTargets(
+  topics: DomainState["sns"],
+  logicalIdToName: Map<string, string>,
+): DomainState["sns"] {
+  return Object.fromEntries(
+    Object.entries(topics).map(([topicName, topicConfig]) => {
+      const subscriptions = topicConfig.subscriptions?.map((subscription) => {
+        if ("type" in subscription && subscription.type === "lambda") {
+          const mappedTarget = logicalIdToName.get(subscription.target);
+          if (mappedTarget) {
+            return { ...subscription, target: mappedTarget };
+          }
+        }
+        return subscription;
+      });
+
+      if (!subscriptions) {
+        return [topicName, topicConfig];
+      }
+      return [topicName, { ...topicConfig, subscriptions }];
+    }),
+  );
 }
 
 function resolveServerlessReferenceName(
@@ -914,7 +881,7 @@ function adaptTopLevelServerlessConfig(
     optionalString(rawProvider.stackName, "provider.stackName") ??
     `${sanitizeName(service)}-${sanitizeName(stage)}`;
 
-  const domains = createEmptyDomainState();
+  const domains = createEmptyServerlessDomainState();
   const functions: Record<string, FunctionModel> = {};
   const functionLogicalIds = new Map<string, string>();
   const rawFunctions = resolved.functions;
@@ -967,7 +934,7 @@ function adaptTopLevelServerlessConfig(
   }
 
   const domainConfigs = new DomainConfigs();
-  writeDomainState(domainConfigs, domains);
+  writeServerlessDomainStateToConfigs(domainConfigs, domains);
 
   return {
     service,
@@ -1080,10 +1047,20 @@ function mergeDomainStates(
   topLevel: TopLevelAdaptation,
   resourceModel: ServiceModel | undefined,
 ): DomainState {
-  const topLevelState = readDomainState(topLevel.domainConfigs);
+  const topLevelState = readServerlessDomainStateFromConfigs(topLevel.domainConfigs);
   if (!resourceModel) return topLevelState;
 
-  const resourceState = readDomainState(resourceModel.domainConfigs);
+  const resourceState = readServerlessDomainStateFromConfigs(resourceModel.domainConfigs);
+  const logicalIdToName = new Map(
+    [...topLevel.functionLogicalIds.entries()].map(([functionName, logicalId]) => [
+      logicalId,
+      functionName,
+    ]),
+  );
+  const remappedResourceSns = remapSnsLambdaSubscriptionTargets(
+    resourceState.sns,
+    logicalIdToName,
+  );
 
   return {
     s3: Object.fromEntries(
@@ -1106,7 +1083,7 @@ function mergeDomainStates(
           ),
         ],
       ).filter(([, value]) => value !== undefined),
-    ) as Record<string, DynamoDBTableConfig>,
+    ) as DomainState["dynamodb"],
     sqs: Object.fromEntries(
       [...new Set([...Object.keys(topLevelState.sqs), ...Object.keys(resourceState.sqs)])].map(
         (name) => [
@@ -1116,10 +1093,10 @@ function mergeDomainStates(
       ),
     ),
     sns: Object.fromEntries(
-      [...new Set([...Object.keys(topLevelState.sns), ...Object.keys(resourceState.sns)])].map(
+      [...new Set([...Object.keys(topLevelState.sns), ...Object.keys(remappedResourceSns)])].map(
         (name) => [
           name,
-          mergeSnsTopicConfig(name, topLevelState.sns[name], resourceState.sns[name]) ?? {},
+          mergeSnsTopicConfig(name, topLevelState.sns[name], remappedResourceSns[name]) ?? {},
         ],
       ),
     ),
@@ -1198,7 +1175,7 @@ export function adaptServerlessConfig(
   validateManagedReferences(mergedFunctions, mergedDomains);
 
   const domainConfigs = new DomainConfigs();
-  writeDomainState(domainConfigs, mergedDomains);
+  writeServerlessDomainStateToConfigs(domainConfigs, mergedDomains);
 
   return parseServiceModel({
     service: topLevel.service,

@@ -2,10 +2,10 @@ import cdk from "aws-cdk-lib";
 import * as dynamodb from "aws-cdk-lib/aws-dynamodb";
 import * as iam from "aws-cdk-lib/aws-iam";
 import * as lambda from "aws-cdk-lib/aws-lambda";
-import { withStageName } from "../stack/helpers.js";
-import { normalizeManagedResourceRef } from "../resource-refs.js";
-import { DYNAMODB_CONFIG } from "../plugins/index.js";
-import type { DomainPlugin } from "../plugins/index.js";
+import { withStageName } from "../../compiler/stack/helpers.js";
+import { normalizeManagedResourceRef } from "../../compiler/resource-refs.js";
+import { DYNAMODB_CONFIG } from "./model.js";
+import type { DomainPlugin } from "../../compiler/plugins/index.js";
 
 function attrType(
   value: "string" | "number" | "binary",
@@ -117,3 +117,4 @@ export const dynamodbDomain: DomainPlugin = {
     }
   },
 };
+

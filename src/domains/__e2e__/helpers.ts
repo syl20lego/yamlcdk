@@ -1,10 +1,10 @@
 import { Template } from "aws-cdk-lib/assertions";
-import { buildApp } from "../../stack-builder.js";
-import { normalizeConfig } from "../../../config/normalize.js";
+import { buildApp } from "../../compiler/stack-builder.js";
+import { normalizeConfig } from "../../config/normalize.js";
 import {
   type RawServiceConfig,
   validateServiceConfig,
-} from "../../../config/schema.js";
+} from "../../config/schema.js";
 
 type RawFunctionConfig = NonNullable<RawServiceConfig["functions"]>[string];
 

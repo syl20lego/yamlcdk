@@ -5,11 +5,19 @@ import path from "node:path";
 import { DomainConfigs } from "../../../compiler/plugins/index.js";
 import {
   APIS_CONFIG,
+} from "../../../domains/apis/model.js";
+import {
   DYNAMODB_CONFIG,
+} from "../../../domains/dynamodb/model.js";
+import {
   S3_CONFIG,
+} from "../../../domains/s3/model.js";
+import {
   SNS_CONFIG,
+} from "../../../domains/sns/model.js";
+import {
   SQS_CONFIG,
-} from "../../../compiler/plugins/native-domain-configs.js";
+} from "../../../domains/sqs/model.js";
 import { normalizeConfig } from "../../../config/normalize.js";
 import { validateServiceConfig } from "../../../config/schema.js";
 import { adaptConfig, yamlcdkDefinitionPlugin } from "../index.js";
@@ -157,13 +165,40 @@ describe("adaptConfig", () => {
     expect(dynamoConfig.tables.users.stream).toBe("NEW_AND_OLD_IMAGES");
   });
 
-  test("populates SQS and SNS domain configs", () => {
+  test("populates SQS and expanded SNS domain configs", () => {
     const normalized = normalizeConfig(
       validateServiceConfig({
         service: "demo",
         messaging: {
           sqs: { jobs: { visibilityTimeout: 30 } },
-          sns: { events: { subscriptions: [{ type: "sqs", target: "jobs" }] } },
+          sns: {
+            events: {
+              topicName: "events-topic.fifo",
+              displayName: "Events",
+              fifoTopic: true,
+              contentBasedDeduplication: true,
+              fifoThroughputScope: "MessageGroup",
+              kmsMasterKeyId: "alias/aws/sns",
+              signatureVersion: "2",
+              tracingConfig: "Active",
+              archivePolicy: {
+                MessageRetentionPeriod: "7",
+              },
+              dataProtectionPolicy: {
+                Name: "events-policy",
+              },
+              deliveryStatusLogging: [
+                {
+                  protocol: "lambda",
+                  successFeedbackSampleRate: "100",
+                },
+              ],
+              tags: {
+                Team: "platform",
+              },
+              subscriptions: [{ type: "sqs", target: "jobs" }],
+            },
+          },
         },
         functions: {},
       }),
@@ -173,9 +208,39 @@ describe("adaptConfig", () => {
     expect(model.domainConfigs.require(SQS_CONFIG).queues.jobs.visibilityTimeout).toBe(
       30,
     );
-    expect(
-      model.domainConfigs.require(SNS_CONFIG).topics.events.subscriptions,
-    ).toHaveLength(1);
+    expect(model.domainConfigs.require(SNS_CONFIG).topics.events).toEqual(
+      expect.objectContaining({
+        topicName: "events-topic.fifo",
+        displayName: "Events",
+        fifoTopic: true,
+        contentBasedDeduplication: true,
+        fifoThroughputScope: "MessageGroup",
+        kmsMasterKeyId: "alias/aws/sns",
+        signatureVersion: "2",
+        tracingConfig: "Active",
+        archivePolicy: {
+          MessageRetentionPeriod: "7",
+        },
+        dataProtectionPolicy: {
+          Name: "events-policy",
+        },
+        deliveryStatusLogging: [
+          {
+            protocol: "lambda",
+            successFeedbackSampleRate: "100",
+          },
+        ],
+        tags: {
+          Team: "platform",
+        },
+      }),
+    );
+    expect(model.domainConfigs.require(SNS_CONFIG).topics.events.subscriptions).toEqual([
+      {
+        type: "sqs",
+        target: "jobs",
+      },
+    ]);
   });
 
   test("populates APIs domain config from restApi settings", () => {

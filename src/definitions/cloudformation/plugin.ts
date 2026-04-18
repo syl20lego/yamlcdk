@@ -16,7 +16,7 @@ import type { DefinitionPlugin } from "../../compiler/plugins/index.js";
 import type { DefinitionPluginLoadOptions } from "../../compiler/plugins/index.js";
 import type { ServiceModel } from "../../compiler/model.js";
 import { parseCfnYaml } from "./cfn-yaml.js";
-import { adaptCfnTemplate } from "./adapt.js";
+import { adaptCfnTemplate } from "./service-adapter.js";
 import { resolveDefinitionVariables } from "../variables/resolve.js";
 
 const STARTER_TEMPLATE = `AWSTemplateFormatVersion: "2010-09-09"

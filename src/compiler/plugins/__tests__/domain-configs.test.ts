@@ -1,13 +1,18 @@
 import { describe, expect, test } from "vitest";
 import { DomainConfigs, createDomainConfigKey } from "../index.js";
 import {
-  S3_CONFIG,
+  APIS_CONFIG,
   apisDomainConfigSchema,
+} from "../../../domains/apis/model.js";
+import {
   dynamodbDomainConfigSchema,
-  snsDomainConfigSchema,
+} from "../../../domains/dynamodb/model.js";
+import {
+  S3_CONFIG,
   s3DomainConfigSchema,
-  sqsDomainConfigSchema,
-} from "../native-domain-configs.js";
+} from "../../../domains/s3/model.js";
+import { snsDomainConfigSchema } from "../../../domains/sns/model.js";
+import { sqsDomainConfigSchema } from "../../../domains/sqs/model.js";
 
 describe("DomainConfigs", () => {
   test("set and get with typed key", () => {
@@ -113,16 +118,31 @@ describe("domain config Zod schemas", () => {
     ).toThrow();
   });
 
-  test("snsDomainConfigSchema validates subscriptions", () => {
+  test("snsDomainConfigSchema validates extended topic and subscription shapes", () => {
     const result = snsDomainConfigSchema.parse({
       topics: {
         events: {
-          subscriptions: [{ type: "sqs", target: "jobs" }],
+          topicName: "events-topic.fifo",
+          fifoTopic: true,
+          subscriptions: [
+            { type: "sqs", target: "jobs" },
+            {
+              type: "lambda",
+              target: "processor",
+              filterPolicy: { severity: ["high"] },
+            },
+            {
+              protocol: "https",
+              endpoint: "https://example.com/webhook",
+              rawMessageDelivery: true,
+            },
+          ],
         },
       },
     });
 
-    expect(result.topics.events.subscriptions).toHaveLength(1);
+    expect(result.topics.events.fifoTopic).toBe(true);
+    expect(result.topics.events.subscriptions).toHaveLength(3);
   });
 
   test("apisDomainConfigSchema validates restApi config", () => {

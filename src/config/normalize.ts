@@ -3,6 +3,7 @@ import {
   type NormalizedServiceConfig,
   type RawServiceConfig,
 } from "./schema.js";
+import { normalizeYamlcdkDomainSections } from "./domain-schema-registry.js";
 export type { NormalizedServiceConfig } from "./schema.js";
 
 function sanitizeName(input: string): string {
@@ -15,6 +16,7 @@ export function normalizeConfig(raw: RawServiceConfig): NormalizedServiceConfig 
   const region = provider.region ?? process.env.AWS_REGION ?? "us-east-1";
   const stackName =
     provider.stackName ?? `${sanitizeName(raw.service)}-${sanitizeName(stage)}`;
+  const domainSections = normalizeYamlcdkDomainSections(raw);
 
   return normalizedServiceConfigSchema.parse({
     service: raw.service,
@@ -24,22 +26,12 @@ export function normalizeConfig(raw: RawServiceConfig): NormalizedServiceConfig 
       region,
     },
     functions: raw.functions ?? {},
-    storage: {
-      s3: raw.storage?.s3 ?? {},
-      dynamodb: raw.storage?.dynamodb ?? {},
-    },
-    messaging: {
-      sqs: raw.messaging?.sqs ?? {},
-      sns: raw.messaging?.sns ?? {},
-    },
+    storage: domainSections.storage,
+    messaging: domainSections.messaging,
     iam: {
       statements: raw.iam?.statements ?? {},
     },
-    cdn: {
-      cachePolicies: raw.cdn?.cachePolicies ?? {},
-      originRequestPolicies: raw.cdn?.originRequestPolicies ?? {},
-      distributions: raw.cdn?.distributions ?? {},
-    },
+    cdn: domainSections.cdn,
     stackName,
   });
 }

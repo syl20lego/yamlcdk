@@ -402,6 +402,84 @@ messaging:
         }),
       );
     });
+
+    test("applies extended SNS topic properties and lambda subscription options", () => {
+      const { template } = buildDefinitionFromYaml(`
+service: sns-extended
+functions:
+  processor:
+    handler: src/processor.handler
+    build:
+      mode: none
+    events:
+      sns:
+        - topic: ref:alerts
+messaging:
+  sns:
+    alerts:
+      topicName: alerts-topic.fifo
+      displayName: Alerts
+      fifoTopic: true
+      contentBasedDeduplication: true
+      fifoThroughputScope: MessageGroup
+      kmsMasterKeyId: alias/aws/sns
+      signatureVersion: "2"
+      tracingConfig: Active
+      archivePolicy:
+        MessageRetentionPeriod: "7"
+      dataProtectionPolicy:
+        Name: alerts-policy
+      deliveryStatusLogging:
+        - protocol: lambda
+          successFeedbackSampleRate: "100"
+      tags:
+        Team: platform
+      subscriptions:
+        - type: lambda
+          target: processor
+          filterPolicy:
+            severity:
+              - high
+          rawMessageDelivery: true
+`);
+
+      template.hasResourceProperties(
+        "AWS::SNS::Topic",
+        Match.objectLike({
+          TopicName: "alerts-topic.fifo",
+          DisplayName: "Alerts",
+          FifoTopic: true,
+          ContentBasedDeduplication: true,
+          FifoThroughputScope: "MessageGroup",
+          KmsMasterKeyId: "alias/aws/sns",
+          SignatureVersion: "2",
+          TracingConfig: "Active",
+          ArchivePolicy: {
+            MessageRetentionPeriod: "7",
+          },
+          DataProtectionPolicy: {
+            Name: "alerts-policy",
+          },
+          DeliveryStatusLogging: Match.arrayWith([
+            Match.objectLike({
+              Protocol: "lambda",
+              SuccessFeedbackSampleRate: "100",
+            }),
+          ]),
+        }),
+      );
+      template.resourceCountIs("AWS::SNS::Subscription", 1);
+      template.hasResourceProperties(
+        "AWS::SNS::Subscription",
+        Match.objectLike({
+          Protocol: "lambda",
+          FilterPolicy: {
+            severity: ["high"],
+          },
+          RawMessageDelivery: true,
+        }),
+      );
+    });
   });
 
   describe("events section", () => {

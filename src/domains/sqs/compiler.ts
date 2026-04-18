@@ -1,10 +1,10 @@
 import * as lambdaEventSources from "aws-cdk-lib/aws-lambda-event-sources";
 import * as sqs from "aws-cdk-lib/aws-sqs";
 import { Duration } from "aws-cdk-lib";
-import { withStageName } from "../stack/helpers.js";
-import { normalizeManagedResourceRef } from "../resource-refs.js";
-import { SQS_CONFIG } from "../plugins/native-domain-configs.js";
-import type { DomainPlugin } from "../plugins/index.js";
+import { withStageName } from "../../compiler/stack/helpers.js";
+import { normalizeManagedResourceRef } from "../../compiler/resource-refs.js";
+import { SQS_CONFIG } from "./model.js";
+import type { DomainPlugin } from "../../compiler/plugins/index.js";
 
 export const sqsDomain: DomainPlugin = {
   name: "sqs",
@@ -45,3 +45,4 @@ export const sqsDomain: DomainPlugin = {
     }
   },
 };
+

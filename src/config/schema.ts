@@ -8,15 +8,11 @@ import { iamStatementSchema as sharedIamStatementSchema } from "../schema/iam.js
 import { buildConfigSchema } from "../schema/build.js";
 import { deploymentConfigSchema } from "../schema/deployment.js";
 import { envValueSchema } from "../schema/cfn-env.js";
+import { dynamodbTableConfigSchema } from "../domains/dynamodb/model.js";
 import {
-  cachePolicySchema,
-  distributionSchema,
-  dynamodbTableSchema,
-  originRequestPolicySchema,
-  s3BucketSchema,
-  snsTopicSchema,
-  sqsQueueSchema,
-} from "../schema/domain-primitives.js";
+  createNormalizedYamlcdkDomainSectionSchemas,
+  createRawYamlcdkDomainSectionSchemas,
+} from "./domain-schema-registry.js";
 
 export const runtimeSchema = z.enum(["nodejs20.x", "nodejs22.x", 'nodejs24.x']);
 
@@ -104,7 +100,11 @@ export const functionSchema = z.object({
     .optional(),
 });
 
-export const tableSchema = dynamodbTableSchema;
+const rawYamlcdkDomainSections = createRawYamlcdkDomainSectionSchemas();
+const normalizedYamlcdkDomainSections =
+  createNormalizedYamlcdkDomainSectionSchemas();
+
+export const tableSchema = dynamodbTableConfigSchema;
 
 export const serviceConfigSchema = z.object({
   service: z.string().min(1),
@@ -131,45 +131,14 @@ export const serviceConfigSchema = z.object({
     })
     .optional(),
   functions: z.record(z.string(), functionSchema).optional(),
-  storage: z
-    .object({
-      s3: z
-        .record(
-          z.string(),
-          s3BucketSchema,
-        )
-        .optional(),
-      dynamodb: z.record(z.string(), tableSchema).optional(),
-    })
-    .optional(),
-  messaging: z
-    .object({
-      sqs: z
-        .record(
-          z.string(),
-          sqsQueueSchema,
-        )
-        .optional(),
-      sns: z
-        .record(
-          z.string(),
-          snsTopicSchema,
-        )
-        .optional(),
-    })
-    .optional(),
+  storage: rawYamlcdkDomainSections.storage,
+  messaging: rawYamlcdkDomainSections.messaging,
   iam: z
     .object({
       statements: z.record(z.string(), iamStatementSchema).optional(),
     })
     .optional(),
-  cdn: z
-    .object({
-      cachePolicies: z.record(z.string(), cachePolicySchema).optional(),
-      originRequestPolicies: z.record(z.string(), originRequestPolicySchema).optional(),
-      distributions: z.record(z.string(), distributionSchema).optional(),
-    })
-    .optional(),
+  cdn: rawYamlcdkDomainSections.cdn,
 });
 
 export const normalizedServiceConfigSchema = z.object({
@@ -195,31 +164,12 @@ export const normalizedServiceConfigSchema = z.object({
     deployment: deploymentConfigSchema.optional(),
   }),
   functions: z.record(z.string(), functionSchema),
-  storage: z.object({
-    s3: z.record(
-      z.string(),
-      s3BucketSchema,
-    ),
-    dynamodb: z.record(z.string(), tableSchema),
-  }),
-  messaging: z.object({
-    sqs: z.record(
-      z.string(),
-      sqsQueueSchema,
-    ),
-    sns: z.record(
-      z.string(),
-      snsTopicSchema,
-    ),
-  }),
+  storage: normalizedYamlcdkDomainSections.storage,
+  messaging: normalizedYamlcdkDomainSections.messaging,
   iam: z.object({
     statements: z.record(z.string(), iamStatementSchema),
   }),
-  cdn: z.object({
-    cachePolicies: z.record(z.string(), cachePolicySchema),
-    originRequestPolicies: z.record(z.string(), originRequestPolicySchema),
-    distributions: z.record(z.string(), distributionSchema),
-  }),
+  cdn: normalizedYamlcdkDomainSections.cdn,
   stackName: z.string().min(1),
 });
 

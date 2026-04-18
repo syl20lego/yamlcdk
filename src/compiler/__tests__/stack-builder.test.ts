@@ -4,7 +4,7 @@ import { normalizeConfig } from "../../config/normalize.js";
 import { validateServiceConfig } from "../../config/schema.js";
 import { parseServiceModel } from "../model.js";
 import { DomainConfigs } from "../plugins/domain-configs.js";
-import { SQS_CONFIG } from "../plugins/native-domain-configs.js";
+import { SQS_CONFIG } from "../../domains/sqs/model.js";
 
 describe("compiler", () => {
   test("synthesizes a cross-domain stack with core resources", () => {

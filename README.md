@@ -391,16 +391,42 @@ Fields:
 messaging:
   sns:
     events:
+      topicName: events-topic.fifo
+      displayName: Events
+      fifoTopic: true
+      contentBasedDeduplication: true
+      fifoThroughputScope: MessageGroup
+      kmsMasterKeyId: alias/aws/sns
+      signatureVersion: "2"
+      tracingConfig: Active
+      archivePolicy:
+        MessageRetentionPeriod: "7"
+      dataProtectionPolicy:
+        Name: events-policy
+      deliveryStatusLogging:
+        - protocol: lambda
+          successFeedbackSampleRate: "100"
+      tags:
+        Team: platform
       subscriptions:
         - type: sqs
           target: jobs
+        - type: lambda
+          target: processor
+          filterPolicy:
+            severity:
+              - high
+        - protocol: https
+          endpoint: https://example.com/webhook
 ```
 
 Fields:
 
-- `subscriptions` - optional topic subscriptions
-- Supported subscription type here is currently `sqs`
-- `target` is the logical queue name from `messaging.sqs` (for example `jobs`), not `ref:jobs`
+- Topic properties: `topicName`, `displayName`, `fifoTopic`, `contentBasedDeduplication`, `fifoThroughputScope`, `kmsMasterKeyId`, `signatureVersion`, `tracingConfig`, `archivePolicy`, `dataProtectionPolicy`, `deliveryStatusLogging`, and `tags`.
+- `subscriptions` is optional and supports:
+  - managed targets: `{ type: sqs|lambda, target: <managed resource name> }`
+  - direct endpoints: `{ protocol: <sns protocol>, endpoint: <endpoint> }`
+- Subscription attributes (optional): `deliveryPolicy`, `filterPolicy`, `filterPolicyScope`, `rawMessageDelivery`, `redrivePolicy`, `region`, `replayPolicy`, `subscriptionRoleArn`.
 
 Use `functions.<name>.events.sns` when you want a Lambda to subscribe to a topic.
 
@@ -749,6 +775,8 @@ The following CloudFormation resource types are extracted and mapped to the yaml
 | `AWS::ApiGatewayV2::Api/Route/Integration` | HTTP API routes targeting functions |
 
 Unsupported resource types in the template are silently ignored.
+
+`AWS::SNS::Topic` adaptation preserves the topic properties currently exposed by yamlcdk's SNS model (for example FIFO/content-deduplication/KMS/signature/tracing/archive/data-protection/logging/tags), and `AWS::SNS::Subscription` adaptation preserves supported subscription attributes (for example filtering, raw delivery, redrive, replay, and role ARN) when they can be represented in the canonical model.
 
 For `AWS::Lambda::Url`, yamlcdk currently supports direct function URLs only: `TargetFunctionArn` must resolve to a Lambda function resource in the same template via `!Ref` or `!GetAtt`, and `Qualifier` is not supported yet.
 
