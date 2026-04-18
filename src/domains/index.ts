@@ -4,7 +4,6 @@ import { nativeDomainsFromManifest } from "./manifest.js";
 
 export {
   type DomainDescriptor,
-  type DomainDefinitionAdapters,
   type DomainDescriptorWithConfig,
   type DomainDescriptorWithoutConfig,
   type DomainEventBindingContract,
@@ -19,19 +18,6 @@ export {
   orderedDomainManifest,
   nativeDomainsFromManifest,
 } from "./manifest.js";
-
-export {
-  adaptDomainConfigsFromYamlcdk,
-  adaptDomainConfigsFromCloudFormation,
-  readServerlessDomainStateFromConfigs,
-  writeServerlessDomainStateToConfigs,
-} from "./definition-adapters.js";
-
-export {
-  type CloudFormationDomainConfigInput,
-  type ServerlessDomainState,
-  createEmptyServerlessDomainState,
-} from "./adapters/types.js";
 
 export { s3Domain } from "./s3/compiler.js";
 export { dynamodbDomain } from "./dynamodb/compiler.js";

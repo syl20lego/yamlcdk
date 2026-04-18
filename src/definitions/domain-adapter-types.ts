@@ -1,21 +1,21 @@
 import type {
   ApisDomainConfig,
-} from "../apis/model.js";
+} from "../domains/apis/model.js";
 import type {
   CloudFrontDomainConfig,
-} from "../cloudfront/model.js";
+} from "../domains/cloudfront/model.js";
 import type {
   DynamoDBDomainConfig,
-} from "../dynamodb/model.js";
+} from "../domains/dynamodb/model.js";
 import type {
   S3DomainConfig,
-} from "../s3/model.js";
+} from "../domains/s3/model.js";
 import type {
   SNSDomainConfig,
-} from "../sns/model.js";
+} from "../domains/sns/model.js";
 import type {
   SQSDomainConfig,
-} from "../sqs/model.js";
+} from "../domains/sqs/model.js";
 
 export interface CloudFormationDomainConfigInput {
   readonly [domainId: string]: unknown;

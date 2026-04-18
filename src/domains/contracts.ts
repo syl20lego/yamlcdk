@@ -1,12 +1,6 @@
 import type { DomainConfigKey } from "../compiler/plugins/domain-configs.js";
-import type { DomainConfigs } from "../compiler/plugins/domain-configs.js";
 import type { DomainPlugin } from "../compiler/plugins/domain-plugin.js";
-import type { NormalizedServiceConfig } from "../config/normalize.js";
 import type { ZodTypeAny } from "zod";
-import type {
-  CloudFormationDomainConfigInput,
-  ServerlessDomainState,
-} from "./adapters/types.js";
 
 export type DomainLifecycleRole = "resource" | "functions" | "binding";
 
@@ -41,27 +35,12 @@ interface DomainDescriptorBase {
   readonly yamlcdkSections?: readonly DomainYamlcdkSectionRegistration[];
 }
 
-export interface DomainDefinitionAdapters<T> {
-  readonly yamlcdk?: (config: NormalizedServiceConfig) => T;
-  readonly cloudformation?: (input: CloudFormationDomainConfigInput) => T;
-  readonly serverlessRead?: (
-    domainConfigs: DomainConfigs,
-    state: ServerlessDomainState,
-  ) => void;
-  readonly serverlessWrite?: (
-    domainConfigs: DomainConfigs,
-    state: ServerlessDomainState,
-  ) => void;
-}
-
 export interface DomainDescriptorWithConfig<T> extends DomainDescriptorBase {
   readonly configKey: DomainConfigKey<T>;
-  readonly adapters?: DomainDefinitionAdapters<T>;
 }
 
 export interface DomainDescriptorWithoutConfig extends DomainDescriptorBase {
   readonly configKey?: undefined;
-  readonly adapters?: undefined;
 }
 
 export type DomainDescriptor<T = unknown> =

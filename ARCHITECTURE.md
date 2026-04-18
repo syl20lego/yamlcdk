@@ -311,7 +311,7 @@ The load stage has multiple sub-steps. For the **yamlcdk format**:
    - `stackName` defaulting to a sanitized `<service>-<stage>` form
    - empty objects for `functions`, `storage`, `messaging`, and `iam`
 4. `adaptConfig()` in `src/definitions/yamlcdk/plugin.ts` converts `NormalizedServiceConfig` into the canonical `ServiceModel`.
-5. `adaptDomainConfigsFromYamlcdk()` (`src/domains/definition-adapters.ts`) writes native domain slices into `DomainConfigs` through manifest-declared adapters.
+5. `adaptDomainConfigsFromYamlcdk()` (`src/definitions/yamlcdk/domain-adapters.ts`) writes native domain slices into `DomainConfigs`.
 6. `loadModel()` returns the parsed model.
 7. CLI commands that accept AWS flags call `resolveModelOverrides()` and `assertModelResolution()` from `src/runtime/aws.ts`.
 
@@ -591,16 +591,21 @@ src/
 │   └── schema.ts                   # Raw/normalized Zod schemas
 ├── definitions/
 │   ├── registry.ts                # Shared DefinitionRegistry setup
+│   ├── domain-adapter-types.ts    # CloudFormationDomainConfigInput, ServerlessDomainState
+│   ├── shared-event-adapters.ts   # Shared event mapping helpers
 │   ├── yamlcdk/
 │   │   ├── plugin.ts               # yamlcdkDefinitionPlugin + adaptConfig()
+│   │   ├── domain-adapters.ts      # yamlcdk → DomainConfigs adaptation
 │   │   └── index.ts                # Re-exports
 │   ├── serverless/
 │   │   ├── adapt.ts                # Serverless YAML -> ServiceModel adaptation
+│   │   ├── domain-adapters.ts      # ServerlessDomainState ↔ DomainConfigs adaptation
 │   │   ├── plugin.ts               # serverlessDefinitionPlugin
 │   │   └── index.ts                # Re-exports
 │   ├── cloudformation/
 │   │   ├── cfn-yaml.ts             # Custom js-yaml schema for CF intrinsic functions
 │   │   ├── adapt.ts                # CF template -> ServiceModel adaptation
+│   │   ├── domain-adapters.ts      # CloudFormation input → DomainConfigs adaptation
 │   │   ├── plugin.ts               # cloudformationDefinitionPlugin
 │   │   └── index.ts                # Re-exports
 │   └── variables/
@@ -615,25 +620,14 @@ src/
 │   │   ├── domain-configs.ts       # DomainConfigs and typed keys
 │   │   ├── registry.ts             # DomainRegistry, DefinitionRegistry, PluginRegistry
 │   │   └── index.ts                # Public plugin exports (domain models + contracts)
-│   ├── domains/
-│   │   ├── index.ts                # Manifest-driven registry bridge + compatibility exports
-│   │   ├── s3.ts                   # Buckets + S3 notifications
-│   │   ├── dynamodb.ts             # Tables + DynamoDB stream bindings
-│   │   ├── sqs.ts                  # Queues + SQS event source bindings
-│   │   ├── sns.ts                  # Topics + SNS->SQS subscriptions + Lambda subscriptions
-│   │   ├── functions.ts            # Legacy implementation entrypoint (wrapped by src/domains/functions/compiler.ts)
-│   │   ├── eventbridge.ts          # EventBridge rule bindings
-│   │   └── apis.ts                 # HTTP/REST API binding and outputs
 │   └── stack/
 │       ├── helpers.ts              # Shared helpers such as withStageName() and IAM ref resolution
 │       └── validation.ts           # Deployment-mode validation
 ├── domains/
-│   ├── manifest.ts                 # Domain descriptors + ordering + adapter hooks
-│   ├── definition-adapters.ts      # Manifest-driven DomainConfigs adaptation helpers
+│   ├── manifest.ts                 # Domain descriptors + ordering
 │   └── <domain>/
 │       ├── model.ts                # Domain-owned schemas/types/config key
-│       ├── compiler.ts             # Domain compiler plugin entrypoint
-│       └── adapters.ts             # yamlcdk/cloudformation/serverless mapping hooks
+│       └── compiler.ts             # Domain compiler plugin entrypoint
 └── runtime/
     ├── aws.ts                      # AWS override validation and model resolution
     ├── build.ts                    # Function build preparation

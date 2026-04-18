@@ -8,8 +8,8 @@ import type {
   ServiceModel,
 } from "../../compiler/model.js";
 import { parseServiceModel } from "../../compiler/model.js";
-import { DomainConfigs } from "../../compiler/plugins/domain-configs.js";
-import { adaptCfnTemplate } from "../cloudformation/adapt.js";
+import { DomainConfigs } from "../../compiler/plugins/index.js";
+import { adaptCfnTemplate } from "../cloudformation/index.js";
 import { parseCfnYaml, resolveLogicalId } from "../cloudformation/cfn-yaml.js";
 import {
   appendUniqueEvent,
@@ -26,11 +26,11 @@ import { isCfnIntrinsicEnv, type EnvValue } from "../../schema/cfn-env.js";
 import {
   type ServerlessDomainState as DomainState,
   createEmptyServerlessDomainState,
-} from "../../domains/adapters/types.js";
+} from "../domain-adapter-types.js";
 import {
   readServerlessDomainStateFromConfigs,
   writeServerlessDomainStateToConfigs,
-} from "../../domains/definition-adapters.js";
+} from "./domain-adapters.js";
 
 interface CfnResource {
   Type: string;

@@ -25,48 +25,13 @@ import {
   sqsYamlcdkMessagingSchema,
 } from "./sqs/model.js";
 import { apisDomain } from "./apis/compiler.js";
-import {
-  adaptApisDomainFromCloudFormation,
-  adaptApisDomainFromYamlcdk,
-  writeApisServerlessDomainConfig,
-} from "./apis/adapters.js";
 import { cloudfrontDomain } from "./cloudfront/compiler.js";
-import {
-  adaptCloudfrontDomainFromCloudFormation,
-  adaptCloudfrontDomainFromYamlcdk,
-  readCloudfrontServerlessDomainState,
-  writeCloudfrontServerlessDomainConfig,
-} from "./cloudfront/adapters.js";
 import { dynamodbDomain } from "./dynamodb/compiler.js";
-import {
-  adaptDynamodbDomainFromCloudFormation,
-  adaptDynamodbDomainFromYamlcdk,
-  readDynamodbServerlessDomainState,
-  writeDynamodbServerlessDomainConfig,
-} from "./dynamodb/adapters.js";
 import { eventbridgeDomain } from "./eventbridge/compiler.js";
 import { functionsDomain } from "./functions/compiler.js";
 import { s3Domain } from "./s3/compiler.js";
-import {
-  adaptS3DomainFromCloudFormation,
-  adaptS3DomainFromYamlcdk,
-  readS3ServerlessDomainState,
-  writeS3ServerlessDomainConfig,
-} from "./s3/adapters.js";
 import { snsDomain } from "./sns/compiler.js";
-import {
-  adaptSnsDomainFromCloudFormation,
-  adaptSnsDomainFromYamlcdk,
-  readSnsServerlessDomainState,
-  writeSnsServerlessDomainConfig,
-} from "./sns/adapters.js";
 import { sqsDomain } from "./sqs/compiler.js";
-import {
-  adaptSqsDomainFromCloudFormation,
-  adaptSqsDomainFromYamlcdk,
-  readSqsServerlessDomainState,
-  writeSqsServerlessDomainConfig,
-} from "./sqs/adapters.js";
 import type { DomainDescriptor } from "./contracts.js";
 
 export const domainManifest: readonly DomainDescriptor[] = [
@@ -84,12 +49,6 @@ export const domainManifest: readonly DomainDescriptor[] = [
         createDefault: () => ({}),
       },
     ],
-    adapters: {
-      yamlcdk: adaptS3DomainFromYamlcdk,
-      cloudformation: adaptS3DomainFromCloudFormation,
-      serverlessRead: readS3ServerlessDomainState,
-      serverlessWrite: writeS3ServerlessDomainConfig,
-    },
   },
   {
     id: "dynamodb",
@@ -105,12 +64,6 @@ export const domainManifest: readonly DomainDescriptor[] = [
         createDefault: () => ({}),
       },
     ],
-    adapters: {
-      yamlcdk: adaptDynamodbDomainFromYamlcdk,
-      cloudformation: adaptDynamodbDomainFromCloudFormation,
-      serverlessRead: readDynamodbServerlessDomainState,
-      serverlessWrite: writeDynamodbServerlessDomainConfig,
-    },
   },
   {
     id: "sqs",
@@ -126,12 +79,6 @@ export const domainManifest: readonly DomainDescriptor[] = [
         createDefault: () => ({}),
       },
     ],
-    adapters: {
-      yamlcdk: adaptSqsDomainFromYamlcdk,
-      cloudformation: adaptSqsDomainFromCloudFormation,
-      serverlessRead: readSqsServerlessDomainState,
-      serverlessWrite: writeSqsServerlessDomainConfig,
-    },
   },
   {
     id: "sns",
@@ -147,12 +94,6 @@ export const domainManifest: readonly DomainDescriptor[] = [
         createDefault: () => ({}),
       },
     ],
-    adapters: {
-      yamlcdk: adaptSnsDomainFromYamlcdk,
-      cloudformation: adaptSnsDomainFromCloudFormation,
-      serverlessRead: readSnsServerlessDomainState,
-      serverlessWrite: writeSnsServerlessDomainConfig,
-    },
   },
   {
     id: "functions",
@@ -175,11 +116,6 @@ export const domainManifest: readonly DomainDescriptor[] = [
     plugin: apisDomain,
     configKey: APIS_CONFIG,
     eventBindings: { produces: false, consumes: true },
-    adapters: {
-      yamlcdk: adaptApisDomainFromYamlcdk,
-      cloudformation: adaptApisDomainFromCloudFormation,
-      serverlessWrite: writeApisServerlessDomainConfig,
-    },
   },
   {
     id: "cloudfront",
@@ -207,12 +143,6 @@ export const domainManifest: readonly DomainDescriptor[] = [
         createDefault: () => ({}),
       },
     ],
-    adapters: {
-      yamlcdk: adaptCloudfrontDomainFromYamlcdk,
-      cloudformation: adaptCloudfrontDomainFromCloudFormation,
-      serverlessRead: readCloudfrontServerlessDomainState,
-      serverlessWrite: writeCloudfrontServerlessDomainConfig,
-    },
   },
 ];
 

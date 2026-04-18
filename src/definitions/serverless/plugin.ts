@@ -4,7 +4,7 @@ import type { DefinitionPlugin } from "../../compiler/plugins/index.js";
 import type { DefinitionPluginLoadOptions } from "../../compiler/plugins/index.js";
 import type { ServiceModel } from "../../compiler/model.js";
 import { parseCfnYaml } from "../cloudformation/cfn-yaml.js";
-import { adaptServerlessConfig } from "./adapt.js";
+import { adaptServerlessConfig } from "./service-adapter.js";
 
 const STARTER_TEMPLATE = `service: my-service
 provider:

@@ -23,8 +23,8 @@ import type {
 } from "../../compiler/plugins/index.js";
 import {
   adaptDomainConfigsFromCloudFormation,
-} from "../../domains/definition-adapters.js";
-import type { CloudFormationDomainConfigInput } from "../../domains/adapters/types.js";
+} from "./domain-adapters.js";
+import type { CloudFormationDomainConfigInput } from "../domain-adapter-types.js";
 import {
   createDynamodbStreamEvent,
   createEventBridgeEvent,

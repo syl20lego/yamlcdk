@@ -5,4 +5,4 @@ export {
   adaptServerlessConfig,
   resolveServerlessVariables,
   toServerlessFunctionLogicalId,
-} from "./adapt.js";
+} from "./service-adapter.js";

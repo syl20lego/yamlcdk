@@ -75,7 +75,7 @@ If you want to exercise deploy/diff/remove flows against AWS, make sure you also
   - `stack-builder.ts` - compiler lifecycle orchestration
   - `plugins/` - domain/definition plugin contracts and registries
   - `domains/` - native domain registry bridge (`index.ts`)
-- `src/domains/` - domain-first modules (`<domain>/model.ts`, `<domain>/compiler.ts`, `<domain>/adapters.ts`) and `manifest.ts`
+- `src/domains/` - domain-first modules (`<domain>/model.ts`, `<domain>/compiler.ts`) and `manifest.ts`
   - `stack/` - shared compiler helpers and validation
 - `src/runtime/`
   - `build.ts` - per-function build/package preparation
@@ -178,8 +178,7 @@ Use them as intended:
    - Update `src/config/normalize.ts` if the new section needs defaults
 
 3. **Adapt normalized config into the domain config store**
-   - Add/update domain adapters in `src/domains/<domain>/adapters.ts`
-   - Ensure the adapter is wired in `src/domains/manifest.ts`
+   - Add/update definition adapters in `src/definitions/{yamlcdk,cloudformation,serverless}/domain-adapters.ts`
 
 4. **Implement the plugin**
    - Add or update `src/domains/<name>/compiler.ts` (or the wrapped implementation it points to)

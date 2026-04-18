@@ -37,7 +37,7 @@
 - YAML schema/defaults: `src/config/schema.ts`, `src/config/normalize.ts`
 - Format adaptation: `src/definitions/{yamlcdk,serverless,cloudformation}/`
 - Canonical model/lifecycle: `src/compiler/model.ts`, `src/compiler/stack-builder.ts`
-- New domain: add key/schema in `src/domains/<name>/model.ts`, implement `src/domains/<name>/compiler.ts` and adapters in `src/domains/<name>/adapters.ts`, register in `src/domains/manifest.ts` with careful ordering.
+- New domain: add key/schema in `src/domains/<name>/model.ts`, implement `src/domains/<name>/compiler.ts`, add definition adapters in `src/definitions/{yamlcdk,cloudformation,serverless}/domain-adapters.ts`, register in `src/domains/manifest.ts` with careful ordering.
 
 ## Tests and docs sync expectations
 - Place tests close to changed area (`src/**/__tests__/*.test.ts`).

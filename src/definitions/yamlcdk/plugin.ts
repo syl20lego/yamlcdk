@@ -28,7 +28,7 @@ import {
 import { loadRawConfig } from "../../config/load.js";
 import { normalizeConfig } from "../../config/normalize.js";
 import type { NormalizedServiceConfig } from "../../config/normalize.js";
-import { adaptDomainConfigsFromYamlcdk } from "../../domains/definition-adapters.js";
+import { adaptDomainConfigsFromYamlcdk } from "./domain-adapters.js";
 
 // ─── Config → ServiceModel adaptation ───────────────────────
 
