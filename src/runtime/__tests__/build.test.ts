@@ -154,6 +154,61 @@ describe("runtime build", () => {
     });
   });
 
+  test("resolves esbuild from an ancestor workspace root in monorepos", () => {
+    withTmpWorkspace((workspaceRoot) => {
+      const appDir = path.join(workspaceRoot, "apps", "consumer-marketing");
+      fs.mkdirSync(path.join(appDir, "src"), { recursive: true });
+      fs.mkdirSync(path.join(workspaceRoot, "node_modules", ".bin"), {
+        recursive: true,
+      });
+      fs.writeFileSync(
+        path.join(
+          workspaceRoot,
+          "node_modules",
+          ".bin",
+          process.platform === "win32" ? "esbuild.cmd" : "esbuild",
+        ),
+        "echo esbuild\n",
+        "utf8",
+      );
+      fs.writeFileSync(
+        path.join(appDir, "src", "hello.ts"),
+        "export const handler = async () => ({ statusCode: 200 });\n",
+        "utf8",
+      );
+
+      const cwdSpy = vi.spyOn(process, "cwd").mockReturnValue(appDir);
+      spawnSyncMock.mockImplementationOnce((_bin: string, args: string[]) => {
+        const outArg = args.find((arg) => arg.startsWith("--outfile="));
+        const outFile = outArg?.slice("--outfile=".length);
+        if (!outFile) {
+          throw new Error("missing outfile arg");
+        }
+        fs.mkdirSync(path.dirname(outFile), { recursive: true });
+        fs.writeFileSync(outFile, "exports.handler = async () => {};\n", "utf8");
+        return { status: 0, stdout: "", stderr: "" };
+      });
+
+      try {
+        prepareFunctionBuilds({
+          functions: {
+            hello: {
+              handler: "src/hello.handler",
+              build: { mode: "esbuild" },
+            },
+          },
+        });
+      } finally {
+        cwdSpy.mockRestore();
+      }
+
+      const [bin] = spawnSyncMock.mock.calls[0] as [string, string[]];
+      expect(bin).toContain(
+        path.join(workspaceRoot, "node_modules", ".bin", "esbuild"),
+      );
+    });
+  });
+
   test("passes custom esbuild options to the CLI", () => {
     withTmpWorkspace((workspaceRoot) => {
       fs.mkdirSync(path.join(workspaceRoot, "src"), { recursive: true });
@@ -246,7 +301,7 @@ describe("runtime build", () => {
               },
             },
           }),
-        ).toThrow('build.mode=esbuild requires "esbuild" to be installed');
+        ).toThrow('build.mode=esbuild requires "esbuild" to be installed in the customer project');
       } finally {
         existsSyncSpy.mockRestore();
       }

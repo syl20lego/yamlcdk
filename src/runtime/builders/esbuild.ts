@@ -15,21 +15,30 @@ const ESBUILD_SOURCE_EXTENSIONS = [
 ] as const;
 
 function resolveEsbuildBin(cwd: string): string {
-  const binDir = path.resolve(cwd, "node_modules", ".bin");
   const candidates =
     process.platform === "win32"
       ? ["esbuild.cmd", "esbuild.exe", "esbuild"]
       : ["esbuild"];
 
-  for (const candidate of candidates) {
-    const candidatePath = path.join(binDir, candidate);
-    if (fs.existsSync(candidatePath)) {
-      return candidatePath;
+  let currentDir = path.resolve(cwd);
+  while (true) {
+    const binDir = path.join(currentDir, "node_modules", ".bin");
+    for (const candidate of candidates) {
+      const candidatePath = path.join(binDir, candidate);
+      if (fs.existsSync(candidatePath)) {
+        return candidatePath;
+      }
     }
+
+    const parentDir = path.dirname(currentDir);
+    if (parentDir === currentDir) {
+      break;
+    }
+    currentDir = parentDir;
   }
 
   throw new Error(
-    'build.mode=esbuild requires "esbuild" to be installed in the customer project. ' +
+    'build.mode=esbuild requires "esbuild" to be installed in the customer project (or its workspace root). ' +
       'Install it with "npm install -D esbuild" (or yarn/pnpm equivalent).',
   );
 }
