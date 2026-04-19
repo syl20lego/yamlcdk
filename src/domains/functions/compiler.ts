@@ -296,6 +296,20 @@ function resolveEnvRecord(
   return result;
 }
 
+function resolveFunctionRoleValue(
+  fn: { iam?: readonly string[] },
+  fnResource: lambda.Function,
+): string {
+  const roleArnEntry = fn.iam?.find((entry) => isIamRoleArn(entry));
+  if (roleArnEntry) {
+    return roleArnEntry;
+  }
+  if (fnResource.role?.roleArn) {
+    return cdk.Token.asString(fnResource.role.roleArn);
+  }
+  return "auto-generated";
+}
+
 export const functionsDomain: DomainPlugin = {
   name: "functions",
 
@@ -327,7 +341,7 @@ export const functionsDomain: DomainPlugin = {
 
       const importedRole = roleArnEntry
         ? iam.Role.fromRoleArn(ctx.stack, `FunctionRole${name}`, roleArnEntry, {
-            mutable: false,
+            mutable: true,
           })
         : undefined;
 
@@ -395,6 +409,7 @@ export const functionsDomain: DomainPlugin = {
         logicalId,
         description: `Lambda function "${name}"`,
         properties: {
+          role: resolveFunctionRoleValue(fn, ref),
           memory: fn.memorySize ?? 256,
           timeout: fn.timeout ?? 30,
           cors: fn.url?.cors ?? null,
@@ -407,4 +422,3 @@ export const functionsDomain: DomainPlugin = {
     return contributions;
   },
 };
-

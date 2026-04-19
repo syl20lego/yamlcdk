@@ -118,4 +118,38 @@ describe("dynamodb domain e2e", () => {
       }),
     );
   });
+
+  test("attaches stream permissions when using a direct Lambda role ARN", () => {
+    const { template } = synthServiceConfig({
+      provider: {
+        account: "123456789012",
+        region: "us-east-1",
+      },
+      functions: {
+        processor: functionConfig({
+          iam: ["arn:aws:iam::123456789012:role/ExistingLambdaRole"],
+          events: {
+            dynamodb: [{ table: "ref:orders", startingPosition: "LATEST" }],
+          },
+        }),
+      },
+      storage: {
+        dynamodb: {
+          orders: {
+            partitionKey: { name: "pk", type: "string" },
+            stream: "NEW_AND_OLD_IMAGES",
+          },
+        },
+      },
+    });
+
+    template.resourceCountIs("AWS::IAM::Role", 0);
+    template.resourceCountIs("AWS::IAM::Policy", 1);
+    template.hasResourceProperties(
+      "AWS::IAM::Policy",
+      Match.objectLike({
+        Roles: Match.arrayWith(["ExistingLambdaRole"]),
+      }),
+    );
+  });
 });

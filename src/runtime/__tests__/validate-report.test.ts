@@ -113,6 +113,7 @@ describe("validation report", () => {
     expect(lambdaRow?.properties).toMatchObject({
       memory: 512,
       timeout: 15,
+      role: expect.any(String),
     });
     expect(lambdaRow?.description).toContain('Lambda function "hello"');
 
@@ -143,9 +144,44 @@ describe("validation report", () => {
     expect(output).toContain("Outputs summary:");
     expect(output).toContain("AWS::Lambda::Function details:");
     expect(output).toContain("Memory");
+    expect(output).toContain("Role");
     expect(output).toContain("Linked Events");
     expect(output).toContain("Status");
     expect(output).toContain("valid");
+  });
+
+  test("surfaces explicit function role arns in validation properties", () => {
+    const config = normalizeConfig(
+      validateServiceConfig({
+        service: "demo",
+        provider: {
+          region: "us-east-1",
+          stage: "dev",
+          account: "123456789012",
+        },
+        functions: {
+          hello: {
+            handler: "src/hello.handler",
+            build: {
+              mode: "none",
+            },
+            iam: ["arn:aws:iam::123456789012:role/ExistingLambdaRole"],
+          },
+        },
+      }),
+    );
+    const { stack } = buildApp(config);
+    const rows = buildValidationReportRows(stack.model, stack);
+    const lambdaRow = rows.find(
+      (row) =>
+        row.section === "Resources" &&
+        row.type === "AWS::Lambda::Function" &&
+        row.name === "hello-dev",
+    );
+
+    expect(lambdaRow?.properties?.role).toBe(
+      "arn:aws:iam::123456789012:role/ExistingLambdaRole",
+    );
   });
 
   test("renders machine-readable json output", () => {
