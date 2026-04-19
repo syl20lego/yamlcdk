@@ -59,4 +59,26 @@ describe("sqs domain e2e", () => {
       }),
     );
   });
+
+  test("creates an event source mapping for an external queue arn", () => {
+    const externalQueueArn = "arn:aws:sqs:us-east-1:123456789012:jobs";
+    const { template } = synthServiceConfig({
+      functions: {
+        processor: functionConfig({
+          events: {
+            sqs: [{ queue: externalQueueArn, batchSize: 5 }],
+          },
+        }),
+      },
+    });
+
+    template.resourceCountIs("AWS::SQS::Queue", 0);
+    template.hasResourceProperties(
+      "AWS::Lambda::EventSourceMapping",
+      Match.objectLike({
+        EventSourceArn: externalQueueArn,
+        BatchSize: 5,
+      }),
+    );
+  });
 });

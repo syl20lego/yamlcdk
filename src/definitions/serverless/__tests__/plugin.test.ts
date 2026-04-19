@@ -2,6 +2,7 @@ import { describe, expect, test } from "vitest";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { Token } from "aws-cdk-lib";
 import { definitionRegistry } from "../../registry.js";
 import { writeTmpYaml } from "../../test-utils/e2e.js";
 import { parseCfnYaml } from "../../cloudformation/index.js";
@@ -879,6 +880,59 @@ resources:
     expect(model.domainConfigs.require(SQS_CONFIG).queues.JobsQueue.visibilityTimeout).toBe(
       45,
     );
+  });
+
+  test("supports external SQS queue ARN events without deriving managed queues", () => {
+    const externalQueueArn = "arn:aws:sqs:us-east-1:123456789012:jobs";
+    const model = adaptServerlessConfig(
+      parseCfnYaml(`
+service: demo
+provider:
+  name: aws
+functions:
+  worker:
+    handler: src/worker.handler
+    events:
+      - sqs:
+          arn: "${externalQueueArn}"
+          batchSize: 5
+`),
+      "serverless.yml",
+    );
+
+    expect(model.functions.worker.events).toContainEqual({
+      type: "sqs",
+      queue: externalQueueArn,
+      batchSize: 5,
+    });
+    expect(model.domainConfigs.require(SQS_CONFIG).queues).toEqual({});
+  });
+
+  test("supports intrinsic external SQS queue ARNs (e.g. Fn::ImportValue)", () => {
+    const model = adaptServerlessConfig(
+      parseCfnYaml(`
+service: demo
+provider:
+  name: aws
+functions:
+  worker:
+    handler: src/worker.handler
+    events:
+      - sqs:
+          arn: !ImportValue shared-jobs-queue-arn
+          batchSize: 5
+`),
+      "serverless.yml",
+    );
+
+    const sqsEvent = model.functions.worker.events.find((event) => event.type === "sqs");
+    expect(sqsEvent).toBeDefined();
+    expect(sqsEvent?.type).toBe("sqs");
+    if (!sqsEvent || sqsEvent.type !== "sqs") {
+      return;
+    }
+    expect(Token.isUnresolved(sqsEvent.queue)).toBe(true);
+    expect(model.domainConfigs.require(SQS_CONFIG).queues).toEqual({});
   });
 
   test("adapts extended SNS topic properties and subscription options from resources.Resources", () => {

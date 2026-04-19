@@ -52,6 +52,34 @@ functions:
     template.resourceCountIs("AWS::Events::Rule", 1);
   });
 
+  test("supports intrinsic external SQS queue ARN event mappings", () => {
+    const exportName = "shared-jobs-queue-arn";
+    const { template } = buildDefinitionFromYaml(
+      `
+service: demo
+provider:
+  name: aws
+functions:
+  worker:
+    handler: src/worker.handler
+    events:
+      - sqs:
+          arn: !ImportValue ${exportName}
+          batchSize: 5
+`,
+      "serverless.yml",
+    );
+
+    template.resourceCountIs("AWS::SQS::Queue", 0);
+    template.hasResourceProperties(
+      "AWS::Lambda::EventSourceMapping",
+      Match.objectLike({
+        EventSourceArn: { "Fn::ImportValue": exportName },
+        BatchSize: 5,
+      }),
+    );
+  });
+
   test("reuses resources.Resources through the CloudFormation adapter path", () => {
     const { plugin, model, template } = buildDefinitionFromYaml(
       `

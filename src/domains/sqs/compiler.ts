@@ -1,6 +1,6 @@
 import * as lambdaEventSources from "aws-cdk-lib/aws-lambda-event-sources";
 import * as sqs from "aws-cdk-lib/aws-sqs";
-import { Duration } from "aws-cdk-lib";
+import { Duration, Token } from "aws-cdk-lib";
 import { withStageName } from "../../compiler/stack/helpers.js";
 import { normalizeManagedResourceRef } from "../../compiler/resource-refs.js";
 import { SQS_CONFIG } from "./model.js";
@@ -27,22 +27,42 @@ export const sqsDomain: DomainPlugin = {
   },
 
   bind(ctx, events) {
+    const externalQueues = new Map<string, sqs.IQueue>();
+
     for (const event of events) {
       if (event.type !== "sqs") continue;
-      const refName = normalizeManagedResourceRef(event.queue);
-      const queue = ctx.refs[refName];
-      if (!queue || !("queueArn" in queue)) {
-        throw new Error(
-          `SQS event references unknown queue "${refName}". ` +
-            `Define it under messaging.sqs and reference it as "<name>" or "ref:<name>".`,
-        );
+
+      let queue: sqs.IQueue;
+      if (event.queue.startsWith("arn:") || Token.isUnresolved(event.queue)) {
+        const existing = externalQueues.get(event.queue);
+        if (existing) {
+          queue = existing;
+        } else {
+          queue = sqs.Queue.fromQueueArn(
+            ctx.stack,
+            `ExternalQueue${externalQueues.size + 1}`,
+            event.queue,
+          );
+          externalQueues.set(event.queue, queue);
+        }
+      } else {
+        const refName = normalizeManagedResourceRef(event.queue);
+        const managedQueue = ctx.refs[refName];
+        if (!managedQueue || !("queueArn" in managedQueue)) {
+          throw new Error(
+            `SQS event references unknown queue "${refName}". ` +
+              `Define it under messaging.sqs and reference it as "<name>" or "ref:<name>", ` +
+              `or provide an SQS queue ARN for external queues.`,
+          );
+        }
+        queue = managedQueue as sqs.IQueue;
       }
+
       event.fnResource.addEventSource(
-        new lambdaEventSources.SqsEventSource(queue as sqs.Queue, {
+        new lambdaEventSources.SqsEventSource(queue, {
           batchSize: event.batchSize ?? 10,
         }),
       );
     }
   },
 };
-

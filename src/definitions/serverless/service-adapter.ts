@@ -1,5 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
+import { Token } from "aws-cdk-lib";
 import type {
   EventDeclaration,
   FunctionModel,
@@ -429,11 +430,26 @@ function remapSnsLambdaSubscriptionTargets(
   );
 }
 
+function isArnLike(value: unknown): value is string {
+  return typeof value === "string" && value.startsWith("arn:");
+}
+
+function isCloudFormationIntrinsicLike(value: unknown): value is Record<string, unknown> {
+  if (value === null || typeof value !== "object" || Array.isArray(value)) {
+    return false;
+  }
+  return Object.keys(value).some((key) => key === "Ref" || key.startsWith("Fn::"));
+}
+
+function isExternalSqsQueueReference(value: string): boolean {
+  return isArnLike(value) || Token.isUnresolved(value);
+}
+
 function resolveServerlessReferenceName(
   value: unknown,
   description: string,
 ): string | undefined {
-  if (typeof value === "string" && value.length > 0 && !value.startsWith("arn:")) {
+  if (typeof value === "string" && value.length > 0 && !isArnLike(value)) {
     return value;
   }
 
@@ -724,9 +740,12 @@ function adaptSqsEvent(
   domains: DomainState,
 ): EventDeclaration {
   if (typeof value === "string") {
-    throw new Error(
-      `${description} must reference an internal SQS queue via Ref/GetAtt for yamlcdk's current domain model.`,
-    );
+    if (!isArnLike(value)) {
+      throw new Error(
+        `${description} must be an SQS ARN string or reference an internal SQS queue via Ref/GetAtt for yamlcdk's current domain model.`,
+      );
+    }
+    return createSqsEvent(value);
   }
   if (value === null || typeof value !== "object" || Array.isArray(value)) {
     throw new Error(`${description} must be an object.`);
@@ -737,19 +756,31 @@ function adaptSqsEvent(
     throw new Error(`${description}.enabled=false is not supported yet.`);
   }
 
+  const batchSize = optionalNumber(config.batchSize, `${description}.batchSize`) as
+    | number
+    | undefined;
+
   const queue = resolveLogicalId(config.arn);
-  if (!queue) {
-    throw new Error(
-      `${description}.arn must reference an internal SQS queue via Ref/GetAtt for yamlcdk's current domain model.`,
-    );
+  if (queue) {
+    domains.sqs[queue] ??= {};
+    return createSqsEvent(queue, batchSize);
   }
 
-  domains.sqs[queue] ??= {};
-  return createSqsEvent(
-    queue,
-    optionalNumber(config.batchSize, `${description}.batchSize`) as
-      | number
-      | undefined,
+  if (isArnLike(config.arn)) {
+    return createSqsEvent(config.arn, batchSize);
+  }
+
+  if (isCloudFormationIntrinsicLike(config.arn)) {
+    return createSqsEvent(Token.asString(config.arn), batchSize);
+  }
+
+  if (typeof config.arn === "string") {
+    throw new Error(
+      `${description}.arn must be an SQS ARN string or reference an internal SQS queue via Ref/GetAtt for yamlcdk's current domain model.`,
+    );
+  }
+  throw new Error(
+    `${description}.arn must reference an internal SQS queue via Ref/GetAtt or be an SQS ARN string.`,
   );
 }
 
@@ -1289,7 +1320,11 @@ function validateManagedReferences(
           `Function "${functionName}" references S3 bucket "${event.bucket}" but no managed bucket could be derived for it.`,
         );
       }
-      if (event.type === "sqs" && !domains.sqs[event.queue]) {
+      if (
+        event.type === "sqs" &&
+        !isExternalSqsQueueReference(event.queue) &&
+        !domains.sqs[event.queue]
+      ) {
         throw new Error(
           `Function "${functionName}" references SQS queue "${event.queue}" but no managed queue could be derived for it.`,
         );
