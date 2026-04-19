@@ -121,6 +121,8 @@ Its job is to orchestrate a domain-agnostic lifecycle and provide shared compile
 The runtime layer lives in `src/runtime/` and handles execution concerns outside the compiler model:
 
 - `aws.ts` applies CLI AWS overrides and re-validates them.
+- `build.ts` orchestrates function build preparation through a provider registry.
+- `builders/` contains per-mode build providers (`typescript`, `esbuild`, `external`, `none`) plus future provider stubs.
 - `cdk.ts` calls `buildApp`, synthesizes templates, invokes the CDK CLI, or uses direct CloudFormation deploy when configured.
 
 ## Canonical model: `ServiceModel` and `DomainConfigs`
@@ -630,7 +632,8 @@ src/
 │       └── compiler.ts             # Domain compiler plugin entrypoint
 └── runtime/
     ├── aws.ts                      # AWS override validation and model resolution
-    ├── build.ts                    # Function build preparation
+    ├── build.ts                    # Function build orchestration (registry dispatch)
+    ├── builders/                   # Build provider modules + registry + stubs
     └── cdk.ts                      # Synth, diff, deploy, remove runtime behavior
 ```
 

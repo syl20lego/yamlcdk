@@ -263,8 +263,9 @@ Useful fields:
 - `timeout` / `memorySize` - optional Lambda settings
 - `environment` - optional Lambda environment variables (scalar strings or CloudFormation intrinsics)
 - `iam` - either `iam.statements` keys or a single IAM role ARN
-- `build.mode` - `typescript` (default), `external`, or `none` (skip build, use handler path as-is)
+- `build.mode` - `typescript` (default), `esbuild`, `external`, or `none` (skip build, use handler path as-is)
 - `build.command`, `build.cwd`, `build.handler` - external build settings
+- `build.esbuild` - esbuild options for `build.mode: esbuild` (requires `esbuild` installed in the customer project)
 - `events` - see the event types below
 - `restApi.apiKeyRequired` - per-function REST API key requirement when the global provider setting is not set
 
@@ -298,6 +299,53 @@ functions:
       cwd: .
       handler: dist/handlers/hello.handler
 ```
+
+Example esbuild build:
+
+```yaml
+functions:
+  hello:
+    handler: src/handlers/hello.handler
+    runtime: nodejs22.x
+    build:
+      mode: esbuild
+      esbuild:
+        minify: true
+        sourcemap: inline
+        external:
+          - aws-sdk
+        define:
+          process.env.NODE_ENV: '"production"'
+```
+
+`build.mode: esbuild` expects `esbuild` to be installed in the customer project (for example `npm install -D esbuild`).
+
+Supported `build.esbuild` options:
+
+| Option | Type | Notes |
+| --- | --- | --- |
+| `bundle` | `boolean` | Defaults to `true` |
+| `minify` | `boolean` | Enables all minification passes |
+| `minifyWhitespace` | `boolean` | Fine-grained minify option |
+| `minifyIdentifiers` | `boolean` | Fine-grained minify option |
+| `minifySyntax` | `boolean` | Fine-grained minify option |
+| `sourcemap` | `boolean \| inline \| external \| linked \| both` | `true` maps to `--sourcemap` |
+| `target` | `string \| string[]` | Defaults from runtime (`nodejs20.x` -> `node20`, `nodejs22.x` -> `node22`, `nodejs24.x` -> `node24`) |
+| `platform` | `node \| browser \| neutral` | Defaults to `node` |
+| `format` | `cjs \| esm \| iife` | Defaults to `cjs` |
+| `external` | `string[]` | Passed as repeated `--external:<pkg>` |
+| `inject` | `string[]` | Passed as repeated `--inject:<path>` |
+| `define` | `Record<string, string>` | Value must be a JS expression string |
+| `loader` | `Record<string, string>` | Per-extension loader mapping |
+| `keepNames` | `boolean` | Preserves class/function names |
+| `treeShaking` | `boolean` | Emits `--tree-shaking=true/false` |
+| `pure` | `string[]` | Passed as repeated `--pure:<name>` |
+| `ignoreAnnotations` | `boolean` | Controls `--ignore-annotations` |
+| `banner` | `Record<string, string>` | Passed as repeated `--banner:<lang>=<text>` |
+| `footer` | `Record<string, string>` | Passed as repeated `--footer:<lang>=<text>` |
+| `tsconfig` | `string` | Path to tsconfig for esbuild |
+| `charset` | `ascii \| utf8` | Emits `--charset=<value>` |
+| `legalComments` | `none \| inline \| eof \| linked \| external` | Emits `--legal-comments=<value>` |
 
 ### `iam`
 
@@ -607,9 +655,11 @@ Detection is aimed at real Serverless AWS configs (`service`, `provider.name: aw
 Supported top-level surface today:
 
 - `service`
+- `plugins` (detects `serverless-esbuild`)
+- `custom.esbuild` (mapped to canonical function esbuild build options)
 - `provider.name`, `provider.stage`, `provider.region`, `provider.runtime`, `provider.timeout`, `provider.memorySize`, `provider.stackName`, `provider.profile`, `provider.tags`
 - `provider.iam.deploymentRole`, `provider.deploymentBucket.name`
-- `functions.*.handler`, `runtime`, `timeout`, `memorySize`, `environment` (including CloudFormation intrinsics like `!Ref`, `!GetAtt`, `!Sub`, `!Join`), `role`, `url`
+- `functions.*.handler`, `runtime`, `timeout`, `memorySize`, `environment` (including CloudFormation intrinsics like `!Ref`, `!GetAtt`, `!Sub`, `!Join`), `role`, `url`, `build`, `skipEsbuild`
 - function events: `http`, `httpApi`, `schedule`, `s3`, `sns`, `sqs`, `stream` (DynamoDB only), and `eventBridge`
 - raw `resources.Resources` / `resources.Outputs`
 
@@ -708,6 +758,10 @@ resources:
 Notes:
 
 - yamlcdk keeps Serverless support scoped to the current compiler model, not the full Serverless Framework surface.
+- `serverless-esbuild` compatibility is compile-oriented only (esbuild build detection and option mapping). Serverless lifecycle/packaging/watch features are out of scope.
+- If `plugins` includes `serverless-esbuild` or `custom.esbuild` exists, functions default to `build.mode: esbuild`.
+- Build option precedence is `functions.<name>.build.esbuild` > `custom.esbuild` > yamlcdk defaults.
+- `functions.<name>.skipEsbuild: true` opts a function out of automatic esbuild mode and falls back to inferred `typescript` / `none`.
 - `resources.Resources` are adapted through the existing CloudFormation path and merged into the Serverless-derived model.
 - Top-level Serverless config is primary; custom resources may augment generated functions and managed resources, but not override generated function logical IDs.
 - `provider.deploymentBucket.name` maps to yamlcdk `provider.deployment.fileAssetsBucketName`.

@@ -657,6 +657,78 @@ functions:
     expect(model.domainConfigs.require(SNS_CONFIG).topics.dispatch).toEqual({});
   });
 
+  test("enables esbuild mode when serverless-esbuild is configured as a plugin", () => {
+    const model = adaptServerlessConfig(
+      parseCfnYaml(`
+service: demo
+plugins:
+  - serverless-esbuild
+provider:
+  name: aws
+functions:
+  hello:
+    handler: src/hello.handler
+`),
+      "serverless.yml",
+    );
+
+    expect(model.functions.hello.build?.mode).toBe("esbuild");
+  });
+
+  test("maps custom.esbuild options and applies function-level overrides", () => {
+    const model = adaptServerlessConfig(
+      parseCfnYaml(`
+service: demo
+provider:
+  name: aws
+custom:
+  esbuild:
+    minify: true
+    sourcemap: inline
+    external:
+      - aws-sdk
+functions:
+  hello:
+    handler: src/hello.handler
+    build:
+      esbuild:
+        minify: false
+        define:
+          process.env.NODE_ENV: '"test"'
+`),
+      "serverless.yml",
+    );
+
+    expect(model.functions.hello.build?.mode).toBe("esbuild");
+    expect(model.functions.hello.build?.esbuild).toEqual({
+      minify: false,
+      sourcemap: "inline",
+      external: ["aws-sdk"],
+      define: {
+        "process.env.NODE_ENV": '"test"',
+      },
+    });
+  });
+
+  test("supports skipEsbuild to keep non-esbuild inferred build behavior", () => {
+    const model = adaptServerlessConfig(
+      parseCfnYaml(`
+service: demo
+plugins:
+  - serverless-esbuild
+provider:
+  name: aws
+functions:
+  hello:
+    handler: src/does-not-exist.handler
+    skipEsbuild: true
+`),
+      "serverless.yml",
+    );
+
+    expect(model.functions.hello.build?.mode).toBe("none");
+  });
+
   test("normalizes HTTP and REST route declarations via shared adapters", () => {
     const model = adaptServerlessConfig(
       parseCfnYaml(`

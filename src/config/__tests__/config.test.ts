@@ -100,6 +100,34 @@ describe("config validation", () => {
     expect(normalized.functions.hello.build?.mode).toBe("external");
   });
 
+  test("supports function esbuild config", () => {
+    const raw = validateServiceConfig({
+      service: "demo",
+      functions: {
+        hello: {
+          handler: "src/handlers/hello.handler",
+          build: {
+            mode: "esbuild",
+            esbuild: {
+              minify: true,
+              target: ["node22", "es2022"],
+              define: {
+                "process.env.NODE_ENV": "\"production\"",
+              },
+            },
+          },
+        },
+      },
+    });
+    const normalized = normalizeConfig(raw);
+    expect(normalized.functions.hello.build?.mode).toBe("esbuild");
+    expect(normalized.functions.hello.build?.esbuild?.target).toEqual([
+      "node22",
+      "es2022",
+    ]);
+    expect(normalized.functions.hello.build?.esbuild?.minify).toBe(true);
+  });
+
   test("supports function URL config", () => {
     const raw = validateServiceConfig({
       service: "demo",

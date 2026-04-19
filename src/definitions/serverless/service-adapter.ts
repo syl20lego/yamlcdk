@@ -7,7 +7,7 @@ import type {
   ProviderConfig,
   ServiceModel,
 } from "../../compiler/model.js";
-import { parseServiceModel } from "../../compiler/model.js";
+import { buildConfigSchema, parseServiceModel } from "../../compiler/model.js";
 import { DomainConfigs } from "../../compiler/plugins/index.js";
 import { adaptCfnTemplate } from "../cloudformation/index.js";
 import { parseCfnYaml, resolveLogicalId } from "../cloudformation/cfn-yaml.js";
@@ -61,6 +61,9 @@ interface TopLevelAdaptation {
   domainConfigs: DomainConfigs;
   functionLogicalIds: Map<string, string>;
 }
+
+type FunctionBuildConfig = NonNullable<FunctionModel["build"]>;
+type FunctionEsbuildConfig = NonNullable<FunctionBuildConfig["esbuild"]>;
 
 const SERVERLESS_URL_CORS_ALLOW_ALL_HEADERS = [
   "Content-Type",
@@ -196,10 +199,145 @@ function optionalObject(
   return value as Record<string, unknown>;
 }
 
-function inferBuildMode(handler: string): FunctionModel["build"] {
+function inferBuildMode(handler: string): FunctionBuildConfig {
   const [modulePath] = handler.split(".");
   const absTs = path.resolve(process.cwd(), `${modulePath}.ts`);
   return { mode: fs.existsSync(absTs) ? "typescript" : "none" };
+}
+
+function parseBuildConfig(
+  value: unknown,
+  description: string,
+): FunctionBuildConfig | undefined {
+  if (value === undefined) return undefined;
+  if (value === null || typeof value !== "object" || Array.isArray(value)) {
+    throw new Error(`${description} must be an object.`);
+  }
+
+  const parsed = buildConfigSchema.safeParse(value);
+  if (parsed.success) {
+    return parsed.data;
+  }
+  const details = parsed.error.issues
+    .map((issue) => {
+      const issuePath = issue.path.join(".");
+      return `${issuePath ? `${description}.${issuePath}` : description}: ${issue.message}`;
+    })
+    .join("\n");
+  throw new Error(`Invalid build config:\n${details}`);
+}
+
+function parseServerlessEsbuildConfig(
+  value: unknown,
+  description: string,
+): FunctionEsbuildConfig | undefined {
+  if (value === undefined) return undefined;
+  if (value === null || typeof value !== "object" || Array.isArray(value)) {
+    throw new Error(`${description} must be an object.`);
+  }
+
+  const parsed = buildConfigSchema.safeParse({ mode: "esbuild", esbuild: value });
+  if (parsed.success) {
+    return parsed.data.esbuild;
+  }
+
+  const issueLines =
+    parsed.error.issues
+      .filter((issue) => issue.path[0] === "esbuild")
+      .map((issue) => {
+        const suffix = issue.path.slice(1).join(".");
+        return `${suffix ? `${description}.${suffix}` : description}: ${issue.message}`;
+      }) ?? [];
+
+  const details =
+    issueLines.length > 0
+      ? issueLines.join("\n")
+      : parsed.error.issues
+          .map((issue) => {
+            const issuePath = issue.path.join(".");
+            return `${issuePath ? `${description}.${issuePath}` : description}: ${issue.message}`;
+          })
+          .join("\n");
+  throw new Error(`Invalid esbuild config:\n${details}`);
+}
+
+function pluginEntryIncludesServerlessEsbuild(entry: unknown): boolean {
+  if (typeof entry === "string") {
+    return entry.trim().toLowerCase() === "serverless-esbuild";
+  }
+  if (entry === null || typeof entry !== "object" || Array.isArray(entry)) {
+    return false;
+  }
+  return Object.keys(entry as Record<string, unknown>).some(
+    (key) => key.trim().toLowerCase() === "serverless-esbuild",
+  );
+}
+
+function hasServerlessEsbuildPlugin(plugins: unknown): boolean {
+  if (typeof plugins === "string") {
+    return pluginEntryIncludesServerlessEsbuild(plugins);
+  }
+  if (Array.isArray(plugins)) {
+    return plugins.some(pluginEntryIncludesServerlessEsbuild);
+  }
+  if (plugins === null || typeof plugins !== "object") {
+    return false;
+  }
+
+  const pluginModules = (plugins as Record<string, unknown>).modules;
+  if (Array.isArray(pluginModules)) {
+    return pluginModules.some(pluginEntryIncludesServerlessEsbuild);
+  }
+  return false;
+}
+
+function mergeEsbuildConfig(
+  base: FunctionEsbuildConfig | undefined,
+  override: FunctionEsbuildConfig | undefined,
+): FunctionEsbuildConfig | undefined {
+  const merged = {
+    ...(base ?? {}),
+    ...(override ?? {}),
+  };
+  return Object.keys(merged).length > 0 ? merged : undefined;
+}
+
+function resolveFunctionBuildConfig(
+  handler: string,
+  functionBuild: FunctionBuildConfig | undefined,
+  customEsbuild: FunctionEsbuildConfig | undefined,
+  serverlessEsbuildConfigured: boolean,
+  skipEsbuild: boolean,
+): FunctionBuildConfig {
+  const inferredBuild = inferBuildMode(handler);
+  const explicitMode = functionBuild?.mode;
+  if (explicitMode) {
+    if (explicitMode === "esbuild") {
+      return {
+        ...functionBuild,
+        mode: "esbuild",
+        esbuild: mergeEsbuildConfig(customEsbuild, functionBuild.esbuild),
+      };
+    }
+    return functionBuild;
+  }
+
+  const hasFunctionEsbuildConfig = functionBuild?.esbuild !== undefined;
+  if (!skipEsbuild && (serverlessEsbuildConfigured || hasFunctionEsbuildConfig)) {
+    return {
+      mode: "esbuild",
+      esbuild: mergeEsbuildConfig(customEsbuild, functionBuild?.esbuild),
+    };
+  }
+
+  if (functionBuild) {
+    return {
+      ...functionBuild,
+      mode: inferredBuild.mode,
+    };
+  }
+
+  return inferredBuild;
 }
 
 function mergeFunctionUrl(
@@ -881,6 +1019,20 @@ function adaptTopLevelServerlessConfig(
     optionalString(rawProvider.stackName, "provider.stackName") ??
     `${sanitizeName(service)}-${sanitizeName(stage)}`;
 
+  const rawCustom =
+    resolved.custom !== undefined &&
+    resolved.custom !== null &&
+    typeof resolved.custom === "object" &&
+    !Array.isArray(resolved.custom)
+      ? (resolved.custom as Record<string, unknown>)
+      : undefined;
+  const customEsbuild = parseServerlessEsbuildConfig(
+    rawCustom?.esbuild,
+    "custom.esbuild",
+  );
+  const serverlessEsbuildConfigured =
+    customEsbuild !== undefined || hasServerlessEsbuildPlugin(resolved.plugins);
+
   const domains = createEmptyServerlessDomainState();
   const functions: Record<string, FunctionModel> = {};
   const functionLogicalIds = new Map<string, string>();
@@ -913,6 +1065,9 @@ function adaptTopLevelServerlessConfig(
       const memorySize =
         optionalNumber(fn.memorySize, `functions.${name}.memorySize`) ??
         optionalNumber(rawProvider.memorySize, "provider.memorySize");
+      const functionBuild = parseBuildConfig(fn.build, `functions.${name}.build`);
+      const skipEsbuild =
+        optionalBoolean(fn.skipEsbuild, `functions.${name}.skipEsbuild`) ?? false;
 
       const roleArn = optionalString(fn.role, `functions.${name}.role`);
       functions[name] = {
@@ -926,7 +1081,13 @@ function adaptTopLevelServerlessConfig(
         ),
         iam: roleArn ? [roleArn] : undefined,
         url: adaptFunctionUrl(fn.url, `functions.${name}.url`),
-        build: inferBuildMode(handler),
+        build: resolveFunctionBuildConfig(
+          handler,
+          functionBuild,
+          customEsbuild,
+          serverlessEsbuildConfigured,
+          skipEsbuild,
+        ),
         events: adaptEvents(name, fn.events, domains),
       };
       functionLogicalIds.set(name, toServerlessFunctionLogicalId(name));

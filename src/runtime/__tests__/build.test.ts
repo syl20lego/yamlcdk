@@ -112,4 +112,157 @@ describe("runtime build", () => {
       ).toBe(true);
     });
   });
+
+  test("builds handlers with esbuild mode", () => {
+    withTmpWorkspace((workspaceRoot) => {
+      fs.mkdirSync(path.join(workspaceRoot, "src"), { recursive: true });
+      fs.writeFileSync(
+        path.join(workspaceRoot, "src", "hello.ts"),
+        "export const handler = async () => ({ statusCode: 200 });\n",
+        "utf8",
+      );
+
+      spawnSyncMock.mockImplementationOnce((_bin: string, args: string[]) => {
+        const outArg = args.find((arg) => arg.startsWith("--outfile="));
+        const outFile = outArg?.slice("--outfile=".length);
+        if (!outFile) {
+          throw new Error("missing outfile arg");
+        }
+        fs.mkdirSync(path.dirname(outFile), { recursive: true });
+        fs.writeFileSync(outFile, "exports.handler = async () => {};\n", "utf8");
+        return { status: 0, stdout: "", stderr: "" };
+      });
+
+      const builds = prepareFunctionBuilds({
+        functions: {
+          hello: {
+            handler: `${path.relative(process.cwd(), workspaceRoot)}/src/hello.handler`,
+            runtime: "nodejs22.x",
+            build: { mode: "esbuild" },
+          },
+        },
+      });
+
+      const [bin, args] = spawnSyncMock.mock.calls[0] as [string, string[]];
+      expect(bin).toContain(`${path.sep}node_modules${path.sep}.bin${path.sep}esbuild`);
+      expect(args).toContain("--bundle");
+      expect(args).toContain("--platform=node");
+      expect(args).toContain("--format=cjs");
+      expect(args).toContain("--target=node22");
+      expect(builds.hello.handler).toBe("index.handler");
+      expect(fs.existsSync(path.join(builds.hello.assetPath, "index.js"))).toBe(true);
+    });
+  });
+
+  test("passes custom esbuild options to the CLI", () => {
+    withTmpWorkspace((workspaceRoot) => {
+      fs.mkdirSync(path.join(workspaceRoot, "src"), { recursive: true });
+      fs.writeFileSync(
+        path.join(workspaceRoot, "src", "worker.ts"),
+        "export const main = async () => ({ ok: true });\n",
+        "utf8",
+      );
+
+      spawnSyncMock.mockImplementationOnce((_bin: string, args: string[]) => {
+        const outArg = args.find((arg) => arg.startsWith("--outfile="));
+        const outFile = outArg?.slice("--outfile=".length);
+        if (!outFile) {
+          throw new Error("missing outfile arg");
+        }
+        fs.mkdirSync(path.dirname(outFile), { recursive: true });
+        fs.writeFileSync(outFile, "exports.main = async () => {};\n", "utf8");
+        return { status: 0, stdout: "", stderr: "" };
+      });
+
+      prepareFunctionBuilds({
+        functions: {
+          worker: {
+            handler: `${path.relative(process.cwd(), workspaceRoot)}/src/worker.main`,
+            build: {
+              mode: "esbuild",
+              esbuild: {
+                bundle: false,
+                format: "esm",
+                target: ["node22", "es2022"],
+                sourcemap: "inline",
+                minify: true,
+                external: ["aws-sdk"],
+                define: {
+                  "process.env.NODE_ENV": "\"production\"",
+                },
+                inject: ["./src/shim.ts"],
+                keepNames: true,
+              },
+            },
+          },
+        },
+      });
+
+      const [, args] = spawnSyncMock.mock.calls[0] as [string, string[]];
+      expect(args).toContain("--bundle=false");
+      expect(args).toContain("--format=esm");
+      expect(args).toContain("--target=node22,es2022");
+      expect(args).toContain("--sourcemap=inline");
+      expect(args).toContain("--minify");
+      expect(args).toContain("--external:aws-sdk");
+      expect(args).toContain('--define:process.env.NODE_ENV="production"');
+      expect(args).toContain("--inject:./src/shim.ts");
+      expect(args).toContain("--keep-names");
+    });
+  });
+
+  test("fails with a clear error when esbuild is not installed in the project", () => {
+    withTmpWorkspace((workspaceRoot) => {
+      fs.mkdirSync(path.join(workspaceRoot, "src"), { recursive: true });
+      fs.writeFileSync(
+        path.join(workspaceRoot, "src", "hello.ts"),
+        "export const handler = async () => ({ statusCode: 200 });\n",
+        "utf8",
+      );
+
+      const realExistsSync = fs.existsSync;
+      const existsSyncSpy = vi.spyOn(fs, "existsSync");
+      existsSyncSpy.mockImplementation((value) => {
+        if (typeof value === "string") {
+          const normalized = path.normalize(value);
+          if (
+            normalized.includes(
+              `${path.sep}node_modules${path.sep}.bin${path.sep}esbuild`,
+            )
+          ) {
+            return false;
+          }
+        }
+        return realExistsSync(value);
+      });
+
+      try {
+        expect(() =>
+          prepareFunctionBuilds({
+            functions: {
+              hello: {
+                handler: `${path.relative(process.cwd(), workspaceRoot)}/src/hello.handler`,
+                build: { mode: "esbuild" },
+              },
+            },
+          }),
+        ).toThrow('build.mode=esbuild requires "esbuild" to be installed');
+      } finally {
+        existsSyncSpy.mockRestore();
+      }
+    });
+  });
+
+  test("fails with a clear error when build.mode is unsupported", () => {
+    expect(() =>
+      prepareFunctionBuilds({
+        functions: {
+          hello: {
+            handler: "src/hello.handler",
+            build: { mode: "vite" },
+          },
+        },
+      }),
+    ).toThrow('Function "hello" uses unsupported build.mode "vite"');
+  });
 });

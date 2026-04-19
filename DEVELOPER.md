@@ -78,7 +78,8 @@ If you want to exercise deploy/diff/remove flows against AWS, make sure you also
 - `src/domains/` - domain-first modules (`<domain>/model.ts`, `<domain>/compiler.ts`) and `manifest.ts`
   - `stack/` - shared compiler helpers and validation
 - `src/runtime/`
-  - `build.ts` - per-function build/package preparation
+  - `build.ts` - per-function build orchestration
+  - `builders/` - mode-specific build providers, registry, shared helpers, and future stubs
   - `aws.ts` - CLI override resolution and AWS context checks
   - `cdk.ts` - synth/diff/deploy/destroy runtime wrappers
 - `src/**/__tests__/` - source-adjacent Vitest suites (`*.test.ts`)
