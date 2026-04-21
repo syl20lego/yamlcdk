@@ -293,6 +293,36 @@ describe("adaptConfig", () => {
     ]);
   });
 
+  test("passes eventBus through eventbridge events", () => {
+    const busArn = "arn:aws:events:us-east-1:123456789012:event-bus/custom";
+    const normalized = normalizeConfig(
+      validateServiceConfig({
+        service: "demo",
+        functions: {
+          handler: {
+            handler: "src/handler.handler",
+            events: {
+              eventbridge: [
+                {
+                  eventPattern: { source: ["app"] },
+                  eventBus: busArn,
+                },
+              ],
+            },
+          },
+        },
+      }),
+    );
+    const model = adaptConfig(normalized);
+    const events = model.functions.handler.events;
+
+    expect(events).toHaveLength(1);
+    expect(events[0].type).toBe("eventbridge");
+    if (events[0].type === "eventbridge") {
+      expect(events[0].eventBus).toBe(busArn);
+    }
+  });
+
   test("normalizes managed references in events and IAM resources", () => {
     const normalized = normalizeConfig(
       validateServiceConfig({

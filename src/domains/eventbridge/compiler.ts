@@ -17,8 +17,17 @@ export const eventbridgeDomain: DomainPlugin = {
         ctx.model.provider.stage,
       );
 
+      const eventBus = event.eventBus
+        ? events.EventBus.fromEventBusArn(
+            ctx.stack,
+            `EventBus${event.functionName}${ruleIndex}`,
+            event.eventBus,
+          )
+        : undefined;
+
       const ruleProps: events.RuleProps = {
         ruleName,
+        eventBus,
         targets: [new targets.LambdaFunction(event.fnResource)],
       };
 

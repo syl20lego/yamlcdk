@@ -642,9 +642,15 @@ functions:
               - my.app
             detail-type:
               - order.created
+        - eventPattern:
+            source:
+              - marketing
+            detail-type:
+              - SEND_EMAIL
+          eventBus: arn:aws:events:us-east-1:123456789012:event-bus/custom-bus
 ```
 
-Each entry is either a `schedule` rule or an `eventPattern` rule.
+Each entry must define at least one of `schedule` or `eventPattern`. Optionally specify `eventBus` with an event bus ARN to target a custom bus (omit or set to `"default"` for the default bus).
 
 ### Serverless Framework format
 
@@ -660,7 +666,7 @@ Supported top-level surface today:
 - `provider.name`, `provider.stage`, `provider.region`, `provider.runtime`, `provider.timeout`, `provider.memorySize`, `provider.stackName`, `provider.profile`, `provider.tags`
 - `provider.iam.deploymentRole`, `provider.deploymentBucket.name`
 - `functions.*.handler`, `runtime`, `timeout`, `memorySize`, `environment` (including CloudFormation intrinsics like `!Ref`, `!GetAtt`, `!Sub`, `!Join`), `role`, `url`, `build`, `skipEsbuild`
-- function events: `http`, `httpApi`, `schedule`, `s3`, `sns`, `sqs`, `stream` (DynamoDB only), and `eventBridge`
+- function events: `http`, `httpApi`, `schedule`, `s3`, `sns`, `sqs`, `stream` (DynamoDB only), and `eventBridge` (with `eventBus`, `pattern`, `schedule`)
 - raw `resources.Resources` / `resources.Outputs`
 
 Supported Serverless variable sources today:

@@ -676,6 +676,66 @@ functions:
     expect(model.functions.hello.build?.mode).toBe("esbuild");
   });
 
+  test("adapts eventBridge event with custom eventBus and pattern", () => {
+    const busArn = "arn:aws:events:us-east-1:123456789012:event-bus/marketing";
+    const model = adaptServerlessConfig(
+      parseCfnYaml(`
+service: demo
+provider:
+  name: aws
+functions:
+  worker:
+    handler: src/worker.handler
+    events:
+      - eventBridge:
+          eventBus: ${busArn}
+          pattern:
+            source:
+              - marketing
+            detail-type:
+              - SEND_EMAIL
+`),
+      "serverless.yml",
+    );
+
+    const events = model.functions.worker.events;
+    expect(events).toHaveLength(1);
+    expect(events[0].type).toBe("eventbridge");
+    if (events[0].type === "eventbridge") {
+      expect(events[0].eventBus).toBe(busArn);
+      expect(events[0].eventPattern).toEqual({
+        source: ["marketing"],
+        "detail-type": ["SEND_EMAIL"],
+      });
+    }
+  });
+
+  test("treats eventBus 'default' as no custom bus", () => {
+    const model = adaptServerlessConfig(
+      parseCfnYaml(`
+service: demo
+provider:
+  name: aws
+functions:
+  worker:
+    handler: src/worker.handler
+    events:
+      - eventBridge:
+          eventBus: default
+          pattern:
+            source:
+              - orders
+`),
+      "serverless.yml",
+    );
+
+    const events = model.functions.worker.events;
+    expect(events).toHaveLength(1);
+    if (events[0].type === "eventbridge") {
+      expect(events[0].eventBus).toBeUndefined();
+    }
+  });
+
   test("maps custom.esbuild options and applies function-level overrides", () => {
     const model = adaptServerlessConfig(
       parseCfnYaml(`

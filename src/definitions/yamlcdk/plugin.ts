@@ -88,6 +88,7 @@ function adaptEvents(
           "eventPattern" in ebEvent
             ? (ebEvent.eventPattern as Record<string, unknown>)
             : undefined,
+        eventBus: "eventBus" in ebEvent ? ebEvent.eventBus : undefined,
       }),
     );
   }

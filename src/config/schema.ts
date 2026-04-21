@@ -85,10 +85,19 @@ export const functionSchema = z.object({
         .optional(),
       eventbridge: z
         .array(
-          z.union([
-            z.object({ schedule: z.string().min(1) }),
-            z.object({ eventPattern: z.record(z.string(), z.unknown()) }),
-          ]),
+          z
+            .object({
+              schedule: z.string().min(1).optional(),
+              eventPattern: z.record(z.string(), z.unknown()).optional(),
+              eventBus: z.string().min(1).optional(),
+            })
+            .refine(
+              (v) => v.schedule !== undefined || v.eventPattern !== undefined,
+              {
+                message:
+                  'EventBridge event must define at least one of "schedule" or "eventPattern".',
+              },
+            ),
         )
         .optional(),
     })

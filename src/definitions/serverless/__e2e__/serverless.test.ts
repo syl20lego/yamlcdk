@@ -52,6 +52,41 @@ functions:
     template.resourceCountIs("AWS::Events::Rule", 1);
   });
 
+  test("synthesizes eventBridge with custom eventBus ARN", () => {
+    const busArn = "arn:aws:events:us-east-1:123456789012:event-bus/marketing";
+    const { template } = buildDefinitionFromYaml(
+      `
+service: demo
+provider:
+  name: aws
+functions:
+  worker:
+    handler: src/worker.handler
+    events:
+      - eventBridge:
+          eventBus: ${busArn}
+          pattern:
+            source:
+              - marketing
+            detail-type:
+              - SEND_EMAIL
+`,
+      "serverless.yml",
+    );
+
+    template.resourceCountIs("AWS::Events::Rule", 1);
+    template.hasResourceProperties(
+      "AWS::Events::Rule",
+      Match.objectLike({
+        EventBusName: "marketing",
+        EventPattern: {
+          source: ["marketing"],
+          "detail-type": ["SEND_EMAIL"],
+        },
+      }),
+    );
+  });
+
   test("supports intrinsic external SQS queue ARN event mappings", () => {
     const exportName = "shared-jobs-queue-arn";
     const { template } = buildDefinitionFromYaml(

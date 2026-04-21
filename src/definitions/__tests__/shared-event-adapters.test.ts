@@ -41,4 +41,18 @@ describe("shared event adapters", () => {
       'CloudFormation EventBridge rule "MyRule" must define ScheduleExpression or EventPattern.',
     );
   });
+
+  test("passes through eventBus in eventbridge event", () => {
+    const busArn = "arn:aws:events:us-east-1:123456789012:event-bus/custom-bus";
+    const event = createEventBridgeEvent({
+      eventPattern: { source: ["app"] },
+      eventBus: busArn,
+    });
+    expect(event).toEqual({
+      type: "eventbridge",
+      schedule: undefined,
+      eventPattern: { source: ["app"] },
+      eventBus: busArn,
+    });
+  });
 });

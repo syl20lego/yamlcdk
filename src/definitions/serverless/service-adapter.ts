@@ -831,14 +831,6 @@ function adaptEventBridgeEvent(
     throw new Error(`${description}.enabled=false is not supported yet.`);
   }
   if (
-    config.eventBus !== undefined &&
-    config.eventBus !== "default"
-  ) {
-    throw new Error(
-      `${description}.eventBus is not supported by yamlcdk's current EventBridge model.`,
-    );
-  }
-  if (
     config.input !== undefined ||
     config.inputPath !== undefined ||
     config.inputTransformer !== undefined ||
@@ -846,7 +838,7 @@ function adaptEventBridgeEvent(
     config.retryPolicy !== undefined
   ) {
     throw new Error(
-      `${description} only supports schedule and pattern with yamlcdk's current EventBridge model.`,
+      `${description} only supports schedule, pattern, and eventBus with yamlcdk's current EventBridge model.`,
     );
   }
 
@@ -860,8 +852,11 @@ function adaptEventBridgeEvent(
     throw new Error(`${description} must define schedule or pattern.`);
   }
 
+  const rawEventBus = optionalString(config.eventBus, `${description}.eventBus`);
+  const eventBus = rawEventBus === "default" ? undefined : rawEventBus;
+
   return createEventBridgeEvent(
-    { schedule, eventPattern: pattern },
+    { schedule, eventPattern: pattern, eventBus },
     `${description} must define schedule or pattern.`,
   );
 }

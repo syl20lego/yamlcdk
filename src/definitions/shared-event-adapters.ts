@@ -66,7 +66,7 @@ export function createDynamodbStreamEvent(
 }
 
 export function createEventBridgeEvent(
-  input: { schedule?: string; eventPattern?: Record<string, unknown> },
+  input: { schedule?: string; eventPattern?: Record<string, unknown>; eventBus?: string },
   missingMessage = 'EventBridge event must define at least one of "schedule" or "eventPattern".',
 ): EventDeclaration {
   if (!input.schedule && !input.eventPattern) {
@@ -76,5 +76,6 @@ export function createEventBridgeEvent(
     type: "eventbridge",
     schedule: input.schedule,
     eventPattern: input.eventPattern,
+    eventBus: input.eventBus,
   };
 }

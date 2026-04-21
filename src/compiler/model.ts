@@ -116,6 +116,7 @@ export const eventDeclarationSchema = z.discriminatedUnion("type", [
       type: z.literal("eventbridge"),
       schedule: z.string().min(1).optional(),
       eventPattern: z.record(z.string(), z.unknown()).optional(),
+      eventBus: z.string().min(1).optional(),
     })
     .refine(
       (value) => value.schedule !== undefined || value.eventPattern !== undefined,

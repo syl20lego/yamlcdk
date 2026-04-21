@@ -121,6 +121,19 @@ describe("model Zod schemas", () => {
     ).toThrow();
   });
 
+  test("eventDeclarationSchema accepts eventbridge with eventBus", () => {
+    const result = eventDeclarationSchema.parse({
+      type: "eventbridge",
+      eventPattern: { source: ["app"] },
+      eventBus: "arn:aws:events:us-east-1:123456789012:event-bus/custom",
+    });
+    if (result.type === "eventbridge") {
+      expect(result.eventBus).toBe(
+        "arn:aws:events:us-east-1:123456789012:event-bus/custom",
+      );
+    }
+  });
+
   test("iamStatementSchema rejects empty actions", () => {
     expect(() =>
       iamStatementSchema.parse({

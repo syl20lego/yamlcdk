@@ -721,6 +721,11 @@ function wireEventBridgeRules(
       const fnId = resolveLogicalId(target.Arn);
       if (!fnId || !functions[fnId]) continue;
 
+      const eventBusName =
+        typeof p.EventBusName === "string" && p.EventBusName !== "default"
+          ? p.EventBusName
+          : undefined;
+
       functions[fnId].events.push(
         createEventBridgeEvent(
           {
@@ -733,6 +738,7 @@ function wireEventBridgeRules(
               typeof p.EventPattern === "object"
                 ? (p.EventPattern as Record<string, unknown>)
                 : undefined,
+            eventBus: eventBusName,
           },
           `CloudFormation EventBridge rule "${logicalId}" must define ScheduleExpression or EventPattern.`,
         ),

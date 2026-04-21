@@ -122,6 +122,7 @@ function summarizeLinkedEvent(event: EventDeclaration): Record<string, unknown> 
         type: event.type,
         schedule: event.schedule,
         eventPattern: event.eventPattern,
+        eventBus: event.eventBus,
       };
     default:
       return { type: "unknown" };

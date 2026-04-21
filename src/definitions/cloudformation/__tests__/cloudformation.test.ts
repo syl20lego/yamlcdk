@@ -734,6 +734,39 @@ Resources:
     }
   });
 
+  test("wires EventBridge rule with custom EventBusName to function", () => {
+    const busArn = "arn:aws:events:us-east-1:123456789012:event-bus/custom";
+    const parsed = parseCfnYaml(`
+AWSTemplateFormatVersion: "2010-09-09"
+Metadata:
+  yamlcdk:
+    service: demo
+Resources:
+  HandlerFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      Handler: src/handler.handler
+  CustomBusRule:
+    Type: AWS::Events::Rule
+    Properties:
+      EventBusName: ${busArn}
+      EventPattern:
+        source:
+          - marketing
+      Targets:
+        - Arn: !GetAtt HandlerFunction.Arn
+          Id: HandlerTarget
+`);
+    const model = adaptCfnTemplate(parsed, "t.yml");
+    const events = model.functions.HandlerFunction.events;
+    expect(events).toHaveLength(1);
+    expect(events[0].type).toBe("eventbridge");
+    if (events[0].type === "eventbridge") {
+      expect(events[0].eventBus).toBe(busArn);
+      expect(events[0].eventPattern).toEqual({ source: ["marketing"] });
+    }
+  });
+
   test("wires HTTP API route to function via integration", () => {
     const parsed = parseCfnYaml(`
 AWSTemplateFormatVersion: "2010-09-09"
