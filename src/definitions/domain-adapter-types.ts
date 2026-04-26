@@ -16,6 +16,9 @@ import type {
 import type {
   SQSDomainConfig,
 } from "../domains/sqs/model.js";
+import type {
+  EventBridgeDomainConfig,
+} from "../domains/eventbridge/model.js";
 
 export interface CloudFormationDomainConfigInput {
   readonly [domainId: string]: unknown;
@@ -23,6 +26,7 @@ export interface CloudFormationDomainConfigInput {
   readonly dynamodb: DynamoDBDomainConfig;
   readonly sqs: SQSDomainConfig;
   readonly sns: SNSDomainConfig;
+  readonly eventbridge: EventBridgeDomainConfig;
   readonly apis: ApisDomainConfig;
   readonly cloudfront: CloudFrontDomainConfig;
 }
@@ -33,6 +37,7 @@ export interface ServerlessDomainState {
   dynamodb: DynamoDBDomainConfig["tables"];
   sqs: SQSDomainConfig["queues"];
   sns: SNSDomainConfig["topics"];
+  eventbridge: EventBridgeDomainConfig["eventBuses"];
   cloudfront: CloudFrontDomainConfig;
 }
 
@@ -42,6 +47,7 @@ export function createEmptyServerlessDomainState(): ServerlessDomainState {
     dynamodb: {},
     sqs: {},
     sns: {},
+    eventbridge: {},
     cloudfront: { cachePolicies: {}, originRequestPolicies: {}, distributions: {} },
   };
 }

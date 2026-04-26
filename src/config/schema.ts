@@ -7,7 +7,11 @@ import {
 import { iamStatementSchema as sharedIamStatementSchema } from "../schema/iam.js";
 import { buildConfigSchema } from "../schema/build.js";
 import { deploymentConfigSchema } from "../schema/deployment.js";
-import { envValueSchema } from "../schema/cfn-env.js";
+import {
+  cfnGetAttEnvSchema,
+  cfnRefEnvSchema,
+  envValueSchema,
+} from "../schema/cfn-env.js";
 import { dynamodbTableConfigSchema } from "../domains/dynamodb/model.js";
 import {
   createNormalizedYamlcdkDomainSectionSchemas,
@@ -23,6 +27,12 @@ const functionUrlSchema = z.object({
   cors: functionUrlCorsSchema.optional(),
   invokeMode: functionUrlInvokeModeSchema.optional(),
 });
+
+const eventBusReferenceSchema = z.union([
+  z.string().min(1),
+  cfnRefEnvSchema,
+  cfnGetAttEnvSchema,
+]);
 
 export const functionSchema = z.object({
   handler: z.string().min(1),
@@ -89,7 +99,7 @@ export const functionSchema = z.object({
             .object({
               schedule: z.string().min(1).optional(),
               eventPattern: z.record(z.string(), z.unknown()).optional(),
-              eventBus: z.string().min(1).optional(),
+              eventBus: eventBusReferenceSchema.optional(),
             })
             .refine(
               (v) => v.schedule !== undefined || v.eventPattern !== undefined,

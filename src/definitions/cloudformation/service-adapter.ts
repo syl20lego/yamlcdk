@@ -9,13 +9,19 @@
 
 import fs from "node:fs";
 import path from "node:path";
-import type {FunctionModel, FunctionUrlConfig, ServiceModel,} from "../../compiler/model.js";
-import {parseServiceModel} from "../../compiler/model.js";
+import type {
+  EventBusReference,
+  FunctionModel,
+  FunctionUrlConfig,
+  ServiceModel,
+} from "../../compiler/model.js";
+import { parseServiceModel } from "../../compiler/model.js";
 import type {
   CloudFrontCachePolicyConfig,
   CloudFrontDistributionConfig,
   CloudFrontOriginRequestPolicyConfig,
   DynamoDBTableConfig,
+  EventBridgeDomainConfig,
   S3BucketConfig,
   SNSSubscriptionConfig,
   SNSTopicConfig,
@@ -33,7 +39,7 @@ import {
   createSnsEvent,
   createSqsEvent,
 } from "../shared-event-adapters.js";
-import {isCfnRef, resolveLogicalId} from "./cfn-yaml.js";
+import { isCfnGetAtt, isCfnRef, resolveLogicalId } from "./cfn-yaml.js";
 
 // ─── CloudFormation template types ──────────────────────────
 
@@ -157,6 +163,18 @@ function toStringArray(
   return value.length > 0 ? value : undefined;
 }
 
+function toEventBusReference(
+  value: unknown,
+  description: string,
+): EventBusReference | undefined {
+  if (value === undefined || value === "default") return undefined;
+  if (typeof value === "string") return value;
+  if (isCfnRef(value) || isCfnGetAtt(value)) return value;
+  throw new Error(
+    `${description} must be a string, Ref, or Fn::GetAtt value.`,
+  );
+}
+
 type FunctionUrlAllowedMethod = NonNullable<
   NonNullable<FunctionUrlConfig["cors"]>["allowedMethods"]
 >[number];
@@ -232,6 +250,32 @@ function extractFunctions(
   }
 
   return functions;
+}
+
+function extractEventBuses(
+  resources: Record<string, CfnResource>,
+): EventBridgeDomainConfig["eventBuses"] {
+  const eventBuses: EventBridgeDomainConfig["eventBuses"] = {};
+
+  for (const [logicalId, resource] of getResourcesByType(
+    resources,
+    "AWS::Events::EventBus",
+  )) {
+    const p = props(resource);
+    eventBuses[logicalId] = {
+      eventBusName:
+        typeof p.Name === "string"
+          ? p.Name
+          : typeof p.EventBusName === "string"
+            ? p.EventBusName
+            : undefined,
+      eventSourceName:
+        typeof p.EventSourceName === "string" ? p.EventSourceName : undefined,
+      description: typeof p.Description === "string" ? p.Description : undefined,
+    };
+  }
+
+  return eventBuses;
 }
 
 function extractS3Buckets(
@@ -721,10 +765,10 @@ function wireEventBridgeRules(
       const fnId = resolveLogicalId(target.Arn);
       if (!fnId || !functions[fnId]) continue;
 
-      const eventBusName =
-        typeof p.EventBusName === "string" && p.EventBusName !== "default"
-          ? p.EventBusName
-          : undefined;
+      const eventBus = toEventBusReference(
+        p.EventBusName,
+        `CloudFormation EventBridge rule "${logicalId}" EventBusName`,
+      );
 
       functions[fnId].events.push(
         createEventBridgeEvent(
@@ -738,7 +782,7 @@ function wireEventBridgeRules(
               typeof p.EventPattern === "object"
                 ? (p.EventPattern as Record<string, unknown>)
                 : undefined,
-            eventBus: eventBusName,
+            eventBus,
           },
           `CloudFormation EventBridge rule "${logicalId}" must define ScheduleExpression or EventPattern.`,
         ),
@@ -1185,6 +1229,7 @@ export function adaptCfnTemplate(
 
   // Extract resources
   const functions = extractFunctions(allResources);
+  const eventBuses = extractEventBuses(allResources);
   const buckets = extractS3Buckets(allResources);
   const tables = extractDynamoDBTables(allResources);
   const queues = extractSQSQueues(allResources);
@@ -1213,6 +1258,7 @@ export function adaptCfnTemplate(
     dynamodb: { tables },
     sqs: { queues },
     sns: { topics },
+    eventbridge: { eventBuses },
     apis: {
       restApi: meta.restApi?.cloudWatchRoleArn
         ? { cloudWatchRoleArn: meta.restApi.cloudWatchRoleArn }

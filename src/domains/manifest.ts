@@ -24,6 +24,10 @@ import {
   SQS_CONFIG,
   sqsYamlcdkMessagingSchema,
 } from "./sqs/model.js";
+import {
+  EVENTBRIDGE_CONFIG,
+  eventbridgeYamlcdkMessagingSchema,
+} from "./eventbridge/model.js";
 import { apisDomain } from "./apis/compiler.js";
 import { cloudfrontDomain } from "./cloudfront/compiler.js";
 import { dynamodbDomain } from "./dynamodb/compiler.js";
@@ -107,6 +111,15 @@ export const domainManifest: readonly DomainDescriptor[] = [
     order: 60,
     role: "binding",
     plugin: eventbridgeDomain,
+    configKey: EVENTBRIDGE_CONFIG,
+    yamlcdkSections: [
+      {
+        namespace: "messaging",
+        key: "eventbridge",
+        schema: eventbridgeYamlcdkMessagingSchema,
+        createDefault: () => ({}),
+      },
+    ],
     eventBindings: { produces: false, consumes: true },
   },
   {

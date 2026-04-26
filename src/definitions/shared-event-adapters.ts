@@ -1,4 +1,7 @@
-import type { EventDeclaration } from "../compiler/model.js";
+import type {
+  EventBusReference,
+  EventDeclaration,
+} from "../compiler/model.js";
 
 export function ensureLeadingSlash(pathValue: string): string {
   if (pathValue === "*") return pathValue;
@@ -66,7 +69,11 @@ export function createDynamodbStreamEvent(
 }
 
 export function createEventBridgeEvent(
-  input: { schedule?: string; eventPattern?: Record<string, unknown>; eventBus?: string },
+  input: {
+    schedule?: string;
+    eventPattern?: Record<string, unknown>;
+    eventBus?: EventBusReference;
+  },
   missingMessage = 'EventBridge event must define at least one of "schedule" or "eventPattern".',
 ): EventDeclaration {
   if (!input.schedule && !input.eventPattern) {

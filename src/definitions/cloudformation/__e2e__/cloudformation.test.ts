@@ -573,6 +573,54 @@ Resources:
       );
     });
 
+    test("creates and wires AWS::Events::EventBus via Ref", () => {
+      const { model, template } = buildDefinitionFromYaml(`
+AWSTemplateFormatVersion: "2010-09-09"
+Metadata:
+  yamlcdk:
+    service: custom-event-bus
+Resources:
+  WorkerFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      Handler: src/worker.handler
+  CustomBus:
+    Type: AWS::Events::EventBus
+    Properties:
+      Name: marketing
+  OrdersRule:
+    Type: AWS::Events::Rule
+    Properties:
+      EventBusName: !Ref CustomBus
+      EventPattern:
+        source:
+          - marketing
+      Targets:
+        - Arn: !GetAtt WorkerFunction.Arn
+          Id: WorkerTarget
+`);
+
+      expect(model.functions.WorkerFunction.events.map((event) => event.type)).toEqual(
+        ["eventbridge"],
+      );
+      template.resourceCountIs("AWS::Events::EventBus", 1);
+      template.hasResourceProperties(
+        "AWS::Events::EventBus",
+        Match.objectLike({
+          Name: "marketing",
+        }),
+      );
+      template.hasResourceProperties(
+        "AWS::Events::Rule",
+        Match.objectLike({
+          EventBusName: { Ref: Match.anyValue() },
+          EventPattern: {
+            source: ["marketing"],
+          },
+        }),
+      );
+    });
+
     test("creates an HTTP API route from ApiGatewayV2 route wiring", () => {
       const { plugin, model, template } = buildDefinitionFromYaml(`
 AWSTemplateFormatVersion: "2010-09-09"

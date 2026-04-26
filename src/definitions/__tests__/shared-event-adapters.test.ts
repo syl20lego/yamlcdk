@@ -55,4 +55,17 @@ describe("shared event adapters", () => {
       eventBus: busArn,
     });
   });
+
+  test("passes through Ref eventBus in eventbridge event", () => {
+    const event = createEventBridgeEvent({
+      eventPattern: { source: ["app"] },
+      eventBus: { Ref: "CustomBus" },
+    });
+    expect(event).toEqual({
+      type: "eventbridge",
+      schedule: undefined,
+      eventPattern: { source: ["app"] },
+      eventBus: { Ref: "CustomBus" },
+    });
+  });
 });

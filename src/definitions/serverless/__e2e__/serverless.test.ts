@@ -87,6 +87,70 @@ functions:
     );
   });
 
+  test("synthesizes eventBridge with custom eventBus name", () => {
+    const { template } = buildDefinitionFromYaml(
+      `
+service: demo
+provider:
+  name: aws
+functions:
+  worker:
+    handler: src/worker.handler
+    events:
+      - eventBridge:
+          eventBus: marketing
+          pattern:
+            source:
+              - marketing
+`,
+      "serverless.yml",
+    );
+
+    template.resourceCountIs("AWS::Events::Rule", 1);
+    template.hasResourceProperties(
+      "AWS::Events::Rule",
+      Match.objectLike({
+        EventBusName: "marketing",
+      }),
+    );
+  });
+
+  test("synthesizes eventBridge with Ref eventBus", () => {
+    const { template } = buildDefinitionFromYaml(
+      `
+service: demo
+provider:
+  name: aws
+functions:
+  worker:
+    handler: src/worker.handler
+    events:
+      - eventBridge:
+          eventBus: !Ref CustomBus
+          pattern:
+            source:
+              - marketing
+resources:
+  Resources:
+    CustomBus:
+      Type: AWS::Events::EventBus
+      Properties:
+        Name: marketing
+`,
+      "serverless.yml",
+    );
+
+    template.resourceCountIs("AWS::Events::EventBus", 1);
+    template.hasResourceProperties(
+      "AWS::Events::Rule",
+      Match.objectLike({
+        EventBusName: {
+          Ref: Match.anyValue(),
+        },
+      }),
+    );
+  });
+
   test("supports intrinsic external SQS queue ARN event mappings", () => {
     const exportName = "shared-jobs-queue-arn";
     const { template } = buildDefinitionFromYaml(

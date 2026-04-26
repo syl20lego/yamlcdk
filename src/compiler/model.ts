@@ -22,6 +22,8 @@ import {
   functionUrlInvokeModeSchema as sharedFunctionUrlInvokeModeSchema,
 } from "../schema/function-url.js";
 import {
+  cfnGetAttEnvSchema,
+  cfnRefEnvSchema,
   envValueSchema as sharedEnvValueSchema,
 } from "../schema/cfn-env.js";
 
@@ -71,6 +73,14 @@ export const functionUrlConfigSchema = z.object({
 
 export type FunctionUrlConfig = z.infer<typeof functionUrlConfigSchema>;
 
+export const eventBusReferenceSchema = z.union([
+  z.string().min(1),
+  cfnRefEnvSchema,
+  cfnGetAttEnvSchema,
+]);
+
+export type EventBusReference = z.infer<typeof eventBusReferenceSchema>;
+
 /**
  * Model-level event declarations.
  *
@@ -116,7 +126,7 @@ export const eventDeclarationSchema = z.discriminatedUnion("type", [
       type: z.literal("eventbridge"),
       schedule: z.string().min(1).optional(),
       eventPattern: z.record(z.string(), z.unknown()).optional(),
-      eventBus: z.string().min(1).optional(),
+      eventBus: eventBusReferenceSchema.optional(),
     })
     .refine(
       (value) => value.schedule !== undefined || value.eventPattern !== undefined,

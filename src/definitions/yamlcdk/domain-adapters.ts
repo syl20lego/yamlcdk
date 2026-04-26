@@ -20,6 +20,11 @@ import {
   snsYamlcdkMessagingSchema,
   type SNSDomainConfig,
 } from "../../domains/sns/model.js";
+import {
+  EVENTBRIDGE_CONFIG,
+  eventbridgeYamlcdkMessagingSchema,
+  type EventBridgeDomainConfig,
+} from "../../domains/eventbridge/model.js";
 import { APIS_CONFIG, type ApisDomainConfig } from "../../domains/apis/model.js";
 import {
   CLOUDFRONT_CONFIG,
@@ -46,6 +51,12 @@ function adaptSqs(config: NormalizedServiceConfig): SQSDomainConfig {
 
 function adaptSns(config: NormalizedServiceConfig): SNSDomainConfig {
   return { topics: snsYamlcdkMessagingSchema.parse(config.messaging.sns) };
+}
+
+function adaptEventBridge(config: NormalizedServiceConfig): EventBridgeDomainConfig {
+  return {
+    eventBuses: eventbridgeYamlcdkMessagingSchema.parse(config.messaging.eventbridge),
+  };
 }
 
 function adaptApis(config: NormalizedServiceConfig): ApisDomainConfig {
@@ -78,6 +89,7 @@ export function adaptDomainConfigsFromYamlcdk(
   domainConfigs.set(DYNAMODB_CONFIG, adaptDynamodb(config));
   domainConfigs.set(SQS_CONFIG, adaptSqs(config));
   domainConfigs.set(SNS_CONFIG, adaptSns(config));
+  domainConfigs.set(EVENTBRIDGE_CONFIG, adaptEventBridge(config));
   domainConfigs.set(APIS_CONFIG, adaptApis(config));
   domainConfigs.set(CLOUDFRONT_CONFIG, adaptCloudfront(config));
   return domainConfigs;

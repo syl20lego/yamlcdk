@@ -4,6 +4,7 @@ import { S3_CONFIG } from "../../domains/s3/model.js";
 import { DYNAMODB_CONFIG } from "../../domains/dynamodb/model.js";
 import { SQS_CONFIG } from "../../domains/sqs/model.js";
 import { SNS_CONFIG } from "../../domains/sns/model.js";
+import { EVENTBRIDGE_CONFIG } from "../../domains/eventbridge/model.js";
 import { APIS_CONFIG } from "../../domains/apis/model.js";
 import { CLOUDFRONT_CONFIG } from "../../domains/cloudfront/model.js";
 
@@ -15,6 +16,7 @@ export function adaptDomainConfigsFromCloudFormation(
   domainConfigs.set(DYNAMODB_CONFIG, input.dynamodb);
   domainConfigs.set(SQS_CONFIG, input.sqs);
   domainConfigs.set(SNS_CONFIG, input.sns);
+  domainConfigs.set(EVENTBRIDGE_CONFIG, input.eventbridge ?? { eventBuses: {} });
   domainConfigs.set(APIS_CONFIG, input.apis);
   domainConfigs.set(CLOUDFRONT_CONFIG, input.cloudfront);
   return domainConfigs;

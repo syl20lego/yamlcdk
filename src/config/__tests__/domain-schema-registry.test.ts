@@ -32,6 +32,7 @@ describe("domain schema registry", () => {
 
     expect(() =>
       normalizedSections.messaging.parse({
+        eventbridge: {},
         sqs: {},
         sns: {},
       }),
@@ -48,13 +49,18 @@ describe("domain schema registry", () => {
     const normalized = normalizeYamlcdkDomainSections({});
 
     expect(Object.keys(normalized.storage).sort()).toEqual(["dynamodb", "s3"]);
-    expect(Object.keys(normalized.messaging).sort()).toEqual(["sns", "sqs"]);
+    expect(Object.keys(normalized.messaging).sort()).toEqual([
+      "eventbridge",
+      "sns",
+      "sqs",
+    ]);
     expect(Object.keys(normalized.cdn).sort()).toEqual([
       "cachePolicies",
       "distributions",
       "originRequestPolicies",
     ]);
     expect(normalized.storage.s3).toEqual({});
+    expect(normalized.messaging.eventbridge).toEqual({});
     expect(normalized.messaging.sqs).toEqual({});
   });
 
@@ -81,6 +87,7 @@ describe("domain schema registry", () => {
     expect(normalized.messaging.sns).toEqual({
       alerts: { displayName: "Alerts" },
     });
+    expect(normalized.messaging.eventbridge).toEqual({});
     expect(normalized.messaging.sqs).toEqual({});
   });
 });

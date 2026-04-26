@@ -74,4 +74,71 @@ describe("eventbridge domain e2e", () => {
       }),
     );
   });
+
+  test("creates a rule targeting a custom event bus by name", () => {
+    const { template } = synthServiceConfig({
+      functions: {
+        processor: functionConfig({
+          events: {
+            eventbridge: [
+              {
+                eventPattern: {
+                  source: ["marketing"],
+                  "detail-type": ["SEND_EMAIL"],
+                },
+                eventBus: "marketing",
+              },
+            ],
+          },
+        }),
+      },
+    });
+
+    template.hasResourceProperties(
+      "AWS::Events::Rule",
+      Match.objectLike({
+        EventBusName: "marketing",
+      }),
+    );
+  });
+
+  test("creates and targets a managed EventBus via Ref", () => {
+    const { template } = synthServiceConfig({
+      messaging: {
+        eventbridge: {
+          customBus: {
+            eventBusName: "marketing",
+            description: "Marketing event bus",
+          },
+        },
+      },
+      functions: {
+        processor: functionConfig({
+          events: {
+            eventbridge: [
+              {
+                eventPattern: { source: ["marketing"] },
+                eventBus: { Ref: "customBus" },
+              },
+            ],
+          },
+        }),
+      },
+    });
+
+    template.resourceCountIs("AWS::Events::EventBus", 1);
+    template.hasResourceProperties(
+      "AWS::Events::EventBus",
+      Match.objectLike({
+        Name: "marketing",
+        Description: "Marketing event bus",
+      }),
+    );
+    template.hasResourceProperties(
+      "AWS::Events::Rule",
+      Match.objectLike({
+        EventBusName: { Ref: Match.anyValue() },
+      }),
+    );
+  });
 });

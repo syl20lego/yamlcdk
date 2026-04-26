@@ -2,16 +2,24 @@ import fs from "node:fs";
 import path from "node:path";
 import { Token } from "aws-cdk-lib";
 import type {
+  EventBusReference,
   EventDeclaration,
   FunctionModel,
   FunctionUrlConfig,
   ProviderConfig,
   ServiceModel,
 } from "../../compiler/model.js";
-import { buildConfigSchema, parseServiceModel } from "../../compiler/model.js";
+import {
+  buildConfigSchema,
+  eventBusReferenceSchema,
+  parseServiceModel,
+} from "../../compiler/model.js";
 import { DomainConfigs } from "../../compiler/plugins/index.js";
 import { adaptCfnTemplate } from "../cloudformation/index.js";
-import { parseCfnYaml, resolveLogicalId } from "../cloudformation/cfn-yaml.js";
+import {
+  parseCfnYaml,
+  resolveLogicalId,
+} from "../cloudformation/cfn-yaml.js";
 import {
   appendUniqueEvent,
   createDynamodbStreamEvent,
@@ -120,6 +128,20 @@ function requireString(value: unknown, description: string): string {
 function optionalString(value: unknown, description: string): string | undefined {
   if (value === undefined) return undefined;
   return requireString(value, description);
+}
+
+function optionalEventBusReference(
+  value: unknown,
+  description: string,
+): EventBusReference | undefined {
+  if (value === undefined) return undefined;
+  const parsed = eventBusReferenceSchema.safeParse(value);
+  if (!parsed.success) {
+    throw new Error(
+      `${description} must be a non-empty string or a CloudFormation Ref/GetAtt object.`,
+    );
+  }
+  return parsed.data;
 }
 
 function optionalNumber(value: unknown, description: string): number | undefined {
@@ -852,7 +874,10 @@ function adaptEventBridgeEvent(
     throw new Error(`${description} must define schedule or pattern.`);
   }
 
-  const rawEventBus = optionalString(config.eventBus, `${description}.eventBus`);
+  const rawEventBus = optionalEventBusReference(
+    config.eventBus,
+    `${description}.eventBus`,
+  );
   const eventBus = rawEventBus === "default" ? undefined : rawEventBus;
 
   return createEventBridgeEvent(
@@ -1287,6 +1312,10 @@ function mergeDomainStates(
         ],
       ),
     ),
+    eventbridge: {
+      ...topLevelState.eventbridge,
+      ...resourceState.eventbridge,
+    },
     cloudfront: {
       cachePolicies: {
         ...topLevelState.cloudfront.cachePolicies,

@@ -7,6 +7,7 @@ import { DYNAMODB_CONFIG } from "../../../domains/dynamodb/model.js";
 import { S3_CONFIG } from "../../../domains/s3/model.js";
 import { SNS_CONFIG } from "../../../domains/sns/model.js";
 import { SQS_CONFIG } from "../../../domains/sqs/model.js";
+import { EVENTBRIDGE_CONFIG } from "../../../domains/eventbridge/model.js";
 
 describe("serverless domain adapters", () => {
   test("readServerlessDomainStateFromConfigs reads all configured domain slices", () => {
@@ -24,6 +25,7 @@ describe("serverless domain adapters", () => {
     });
     configs.set(SQS_CONFIG, { queues: { JobsQueue: { visibilityTimeout: 45 } } });
     configs.set(SNS_CONFIG, { topics: { EventsTopic: {} } });
+    configs.set(EVENTBRIDGE_CONFIG, { eventBuses: { CustomBus: { eventBusName: "marketing" } } });
     configs.set(APIS_CONFIG, { restApi: { cloudWatchRoleArn: "arn:aws:iam::123456789012:role/apigw" } });
     configs.set(CLOUDFRONT_CONFIG, {
       cachePolicies: {},
@@ -39,6 +41,7 @@ describe("serverless domain adapters", () => {
     });
     expect(state.sqs).toEqual({ JobsQueue: { visibilityTimeout: 45 } });
     expect(state.sns).toEqual({ EventsTopic: {} });
+    expect(state.eventbridge).toEqual({ CustomBus: { eventBusName: "marketing" } });
     expect(state.cloudfront).toEqual({
       cachePolicies: {},
       originRequestPolicies: {},
@@ -58,6 +61,7 @@ describe("serverless domain adapters", () => {
       },
       sqs: { QueueA: { visibilityTimeout: 30 } },
       sns: { TopicA: { displayName: "topic-a" } },
+      eventbridge: { CustomBus: { eventBusName: "marketing" } },
       cloudfront: {
         cachePolicies: {},
         originRequestPolicies: {},
@@ -75,6 +79,9 @@ describe("serverless domain adapters", () => {
     expect(configs.require(SNS_CONFIG)).toEqual({
       topics: { TopicA: { displayName: "topic-a" } },
     });
+    expect(configs.require(EVENTBRIDGE_CONFIG)).toEqual({
+      eventBuses: { CustomBus: { eventBusName: "marketing" } },
+    });
     expect(configs.require(APIS_CONFIG)).toEqual({ restApi: undefined });
     expect(configs.require(CLOUDFRONT_CONFIG)).toEqual({
       cachePolicies: {},
@@ -83,4 +90,3 @@ describe("serverless domain adapters", () => {
     });
   });
 });
-

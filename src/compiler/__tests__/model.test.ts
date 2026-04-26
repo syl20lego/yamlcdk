@@ -134,6 +134,28 @@ describe("model Zod schemas", () => {
     }
   });
 
+  test("eventDeclarationSchema accepts eventbridge with Ref/GetAtt eventBus", () => {
+    const refResult = eventDeclarationSchema.parse({
+      type: "eventbridge",
+      eventPattern: { source: ["app"] },
+      eventBus: { Ref: "CustomBus" },
+    });
+    const getAttResult = eventDeclarationSchema.parse({
+      type: "eventbridge",
+      eventPattern: { source: ["app"] },
+      eventBus: { "Fn::GetAtt": ["CustomBus", "Arn"] },
+    });
+
+    if (refResult.type === "eventbridge") {
+      expect(refResult.eventBus).toEqual({ Ref: "CustomBus" });
+    }
+    if (getAttResult.type === "eventbridge") {
+      expect(getAttResult.eventBus).toEqual({
+        "Fn::GetAtt": ["CustomBus", "Arn"],
+      });
+    }
+  });
+
   test("iamStatementSchema rejects empty actions", () => {
     expect(() =>
       iamStatementSchema.parse({

@@ -648,9 +648,23 @@ functions:
             detail-type:
               - SEND_EMAIL
           eventBus: arn:aws:events:us-east-1:123456789012:event-bus/custom-bus
+        - eventPattern:
+            source:
+              - marketing
+          eventBus: marketing
+        - eventPattern:
+            source:
+              - marketing
+          eventBus:
+            Ref: CustomBus
 ```
 
-Each entry must define at least one of `schedule` or `eventPattern`. Optionally specify `eventBus` with an event bus ARN to target a custom bus (omit or set to `"default"` for the default bus).
+Each entry must define at least one of `schedule` or `eventPattern`. Optionally specify `eventBus` to target a custom bus using:
+- an EventBridge bus ARN
+- a plain bus name
+- CloudFormation-style `Ref` / `Fn::GetAtt` (`Arn` or `Name`)
+
+Omit `eventBus` (or set `"default"` in Serverless format) for the default bus.
 
 ### Serverless Framework format
 
@@ -831,6 +845,7 @@ The following CloudFormation resource types are extracted and mapped to the yaml
 | `AWS::SNS::Topic` | SNS topics |
 | `AWS::SNS::Subscription` | SNS subscriptions (sqs and lambda protocols) |
 | `AWS::Lambda::EventSourceMapping` | SQS and DynamoDB stream event triggers on functions |
+| `AWS::Events::EventBus` | EventBridge event bus resources and references used by function EventBridge events |
 | `AWS::Events::Rule` | EventBridge schedule and event pattern rules targeting functions |
 | `AWS::ApiGatewayV2::Api/Route/Integration` | HTTP API routes targeting functions |
 

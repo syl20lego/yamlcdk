@@ -688,6 +688,60 @@ functions:
     }
   });
 
+  test("adapts eventBridge event with Ref eventBus", () => {
+    const model = adaptServerlessConfig(
+      parseCfnYaml(`
+service: demo
+provider:
+  name: aws
+functions:
+  worker:
+    handler: src/worker.handler
+    events:
+      - eventBridge:
+          eventBus: !Ref CustomBus
+          pattern:
+            source:
+              - marketing
+`),
+      "serverless.yml",
+    );
+
+    const events = model.functions.worker.events;
+    expect(events).toHaveLength(1);
+    expect(events[0].type).toBe("eventbridge");
+    if (events[0].type === "eventbridge") {
+      expect(events[0].eventBus).toEqual({ Ref: "CustomBus" });
+      expect(events[0].eventPattern).toEqual({ source: ["marketing"] });
+    }
+  });
+
+  test("adapts eventBridge event with plain eventBus name", () => {
+    const model = adaptServerlessConfig(
+      parseCfnYaml(`
+service: demo
+provider:
+  name: aws
+functions:
+  worker:
+    handler: src/worker.handler
+    events:
+      - eventBridge:
+          eventBus: marketing
+          pattern:
+            source:
+              - marketing
+`),
+      "serverless.yml",
+    );
+
+    const events = model.functions.worker.events;
+    expect(events).toHaveLength(1);
+    if (events[0].type === "eventbridge") {
+      expect(events[0].eventBus).toBe("marketing");
+    }
+  });
+
   test("treats eventBus 'default' as no custom bus", () => {
     const model = adaptServerlessConfig(
       parseCfnYaml(`
@@ -1167,5 +1221,4 @@ functions:
     ).toThrow(/must be a scalar value or a supported CloudFormation intrinsic/);
   });
 });
-
 

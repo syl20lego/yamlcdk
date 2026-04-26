@@ -5,6 +5,7 @@ import { S3_CONFIG } from "../../../domains/s3/model.js";
 import { DYNAMODB_CONFIG } from "../../../domains/dynamodb/model.js";
 import { SQS_CONFIG } from "../../../domains/sqs/model.js";
 import { SNS_CONFIG } from "../../../domains/sns/model.js";
+import { EVENTBRIDGE_CONFIG } from "../../../domains/eventbridge/model.js";
 
 describe("adaptCfnTemplate", () => {
   test("extracts service metadata", () => {
@@ -537,6 +538,64 @@ Resources:
     }
   });
 
+  test("wires EventBridge rule with EventBusName Ref to function", () => {
+    const parsed = parseCfnYaml(`
+AWSTemplateFormatVersion: "2010-09-09"
+Metadata:
+  yamlcdk:
+    service: demo
+Resources:
+  HandlerFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      Handler: src/handler.handler
+  CustomBus:
+    Type: AWS::Events::EventBus
+    Properties:
+      Name: marketing
+  CustomBusRule:
+    Type: AWS::Events::Rule
+    Properties:
+      EventBusName: !Ref CustomBus
+      EventPattern:
+        source:
+          - marketing
+      Targets:
+        - Arn: !GetAtt HandlerFunction.Arn
+          Id: HandlerTarget
+`);
+    const model = adaptCfnTemplate(parsed, "t.yml");
+    const events = model.functions.HandlerFunction.events;
+    expect(events).toHaveLength(1);
+    expect(events[0].type).toBe("eventbridge");
+    if (events[0].type === "eventbridge") {
+      expect(events[0].eventBus).toEqual({ Ref: "CustomBus" });
+      expect(events[0].eventPattern).toEqual({ source: ["marketing"] });
+    }
+  });
+
+  test("extracts AWS::Events::EventBus into eventbridge domain config", () => {
+    const parsed = parseCfnYaml(`
+AWSTemplateFormatVersion: "2010-09-09"
+Metadata:
+  yamlcdk:
+    service: demo
+Resources:
+  CustomBus:
+    Type: AWS::Events::EventBus
+    Properties:
+      Name: marketing
+      Description: Marketing event bus
+`);
+    const model = adaptCfnTemplate(parsed, "t.yml");
+    const config = model.domainConfigs.get(EVENTBRIDGE_CONFIG);
+    expect(config?.eventBuses.CustomBus).toEqual({
+      eventBusName: "marketing",
+      description: "Marketing event bus",
+      eventSourceName: undefined,
+    });
+  });
+
   test("wires HTTP API route to function via integration", () => {
     const parsed = parseCfnYaml(`
 AWSTemplateFormatVersion: "2010-09-09"
@@ -682,4 +741,3 @@ Resources:
     expect(types).toEqual(["eventbridge", "sns", "sqs"]);
   });
 });
-

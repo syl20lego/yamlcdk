@@ -164,6 +164,34 @@ describe("adaptConfig", () => {
     }
   });
 
+  test("passes Ref eventBus through eventbridge events", () => {
+    const normalized = normalizeConfig(
+      validateServiceConfig({
+        service: "demo",
+        functions: {
+          handler: {
+            handler: "src/handler.handler",
+            events: {
+              eventbridge: [
+                {
+                  eventPattern: { source: ["app"] },
+                  eventBus: { Ref: "CustomBus" },
+                },
+              ],
+            },
+          },
+        },
+      }),
+    );
+    const model = adaptConfig(normalized);
+    const events = model.functions.handler.events;
+
+    expect(events).toHaveLength(1);
+    if (events[0].type === "eventbridge") {
+      expect(events[0].eventBus).toEqual({ Ref: "CustomBus" });
+    }
+  });
+
   test("normalizes managed references in events and IAM resources", () => {
     const normalized = normalizeConfig(
       validateServiceConfig({
