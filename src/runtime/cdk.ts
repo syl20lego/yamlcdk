@@ -20,6 +20,21 @@ const require = createRequire(import.meta.url);
  * through structural compatibility.
  */
 type CdkRuntimeConfig = ServiceModel | NormalizedServiceConfig;
+type CloudFormationStackDescription = {
+  StackStatus?: string;
+  StackStatusReason?: string;
+  Outputs?: Array<{ OutputKey?: string; OutputValue?: string }>;
+};
+type CloudFormationStackEvent = {
+  ResourceStatus?: string;
+  ResourceStatusReason?: string;
+};
+
+const DEPLOY_SUCCESS_STACK_STATUSES = new Set([
+  "CREATE_COMPLETE",
+  "UPDATE_COMPLETE",
+  "IMPORT_COMPLETE",
+]);
 
 function extractAccountFromRoleArn(roleArn?: string): string | undefined {
   if (!roleArn) return undefined;
@@ -56,6 +71,39 @@ function resolveCdkBin(): string {
   );
 }
 
+export function detectCloudFormationFailureState(output: string): string | undefined {
+  const explicitStateMatch = output.match(
+    /\bis in (?:a )?([A-Z_]*(?:ROLLBACK|FAILED)[A-Z_]*) state\b/i,
+  );
+  if (explicitStateMatch) {
+    return explicitStateMatch[1].toUpperCase();
+  }
+
+  const fallbackStateMatch = output.match(
+    /\b((?:UPDATE|CREATE|DELETE|IMPORT)?_?ROLLBACK(?:_[A-Z]+)*|(?:UPDATE|CREATE|DELETE|IMPORT)_FAILED)\b/i,
+  );
+  return fallbackStateMatch?.[1].toUpperCase();
+}
+
+export function isSuccessfulDeployStackStatus(status: string): boolean {
+  return DEPLOY_SUCCESS_STACK_STATUSES.has(status.toUpperCase());
+}
+
+export function selectLatestFailureReason(
+  events: CloudFormationStackEvent[],
+): string | undefined {
+  for (const event of events) {
+    const status = event.ResourceStatus?.toUpperCase();
+    if (!status) continue;
+    if (!status.includes("FAILED") && !status.includes("ROLLBACK")) continue;
+    const reason = event.ResourceStatusReason?.trim();
+    if (reason) {
+      return reason;
+    }
+  }
+  return undefined;
+}
+
 function runCdk(args: string[], env: NodeJS.ProcessEnv): void {
   const cdkBin = resolveCdkBin();
   const result = spawnSync(process.execPath, [cdkBin, ...args], {
@@ -64,8 +112,17 @@ function runCdk(args: string[], env: NodeJS.ProcessEnv): void {
   });
   if (result.stdout) process.stdout.write(result.stdout);
   if (result.stderr) process.stderr.write(result.stderr);
+  const output = `${result.stdout ?? ""}\n${result.stderr ?? ""}`;
+  if (args[0] === "deploy") {
+    const detectedFailureState = detectCloudFormationFailureState(output);
+    if (detectedFailureState) {
+      throw new Error(
+        `CloudFormation deployment failed: detected ${detectedFailureState} state.\n` +
+          output.trim(),
+      );
+    }
+  }
   if (result.status !== 0) {
-    const output = `${result.stdout ?? ""}\n${result.stderr ?? ""}`;
     const hasDestroyTtyConfirmationError =
       /Destroying stacks is an irreversible action, but terminal \(TTY\) is not attached/i.test(
         output,
@@ -155,9 +212,17 @@ function runCloudFormationDeployWithRole(
   const result = spawnSync("aws", args, { env, encoding: "utf8" });
   if (result.stdout) process.stdout.write(result.stdout);
   if (result.stderr) process.stderr.write(result.stderr);
+  const output = `${result.stdout ?? ""}\n${result.stderr ?? ""}`;
+  const detectedFailureState = detectCloudFormationFailureState(output);
+  if (detectedFailureState) {
+    throw new Error(
+      `CloudFormation deploy failed with service role: detected ${detectedFailureState} state.\n` +
+        `Command: aws ${args.join(" ")}\n${output.trim()}`,
+    );
+  }
   if (result.status !== 0) {
     throw new Error(
-      `CloudFormation deploy failed with service role.\nCommand: aws ${args.join(" ")}\n${result.stdout ?? ""}\n${result.stderr ?? ""}`,
+      `CloudFormation deploy failed with service role.\nCommand: aws ${args.join(" ")}\n${output}`,
     );
   }
 }
@@ -197,7 +262,10 @@ function cdkCloudFormationRoleArgs(config: CdkRuntimeConfig): string[] {
     : [];
 }
 
-function printStackOutputs(config: CdkRuntimeConfig, env: NodeJS.ProcessEnv): void {
+function describeStack(
+  config: CdkRuntimeConfig,
+  env: NodeJS.ProcessEnv,
+): CloudFormationStackDescription | undefined {
   const result = spawnSync(
     "aws",
     [
@@ -206,19 +274,78 @@ function printStackOutputs(config: CdkRuntimeConfig, env: NodeJS.ProcessEnv): vo
       "--stack-name",
       config.stackName,
       "--query",
-      "Stacks[0].Outputs",
+      "Stacks[0]",
       "--output",
       "json",
     ],
     { env, encoding: "utf8" },
   );
   if (result.status !== 0) {
+    return undefined;
+  }
+  try {
+    return JSON.parse(result.stdout || "{}") as CloudFormationStackDescription;
+  } catch {
+    return undefined;
+  }
+}
+
+function fetchLatestStackFailureReason(
+  config: CdkRuntimeConfig,
+  env: NodeJS.ProcessEnv,
+): string | undefined {
+  const result = spawnSync(
+    "aws",
+    [
+      "cloudformation",
+      "describe-stack-events",
+      "--stack-name",
+      config.stackName,
+      "--query",
+      "StackEvents",
+      "--output",
+      "json",
+    ],
+    { env, encoding: "utf8" },
+  );
+  if (result.status !== 0) {
+    return undefined;
+  }
+  try {
+    const events = JSON.parse(result.stdout || "[]") as CloudFormationStackEvent[];
+    return selectLatestFailureReason(events);
+  } catch {
+    return undefined;
+  }
+}
+
+function assertStackDeploySucceeded(
+  config: CdkRuntimeConfig,
+  env: NodeJS.ProcessEnv,
+): void {
+  const stack = describeStack(config, env);
+  const status = stack?.StackStatus?.trim();
+  if (!status) {
+    throw new Error(
+      `Unable to verify CloudFormation stack status after deploy for "${config.stackName}".`,
+    );
+  }
+  if (isSuccessfulDeployStackStatus(status)) {
     return;
   }
-  const outputs = JSON.parse(result.stdout || "[]") as Array<{
-    OutputKey?: string;
-    OutputValue?: string;
-  }>;
+  const failureReason =
+    fetchLatestStackFailureReason(config, env) ??
+    stack?.StackStatusReason?.trim() ??
+    "No failure reason reported by CloudFormation.";
+  throw new Error(
+    `CloudFormation deployment failed for stack "${config.stackName}".\n` +
+      `Final stack status: ${status}\n` +
+      `Reason: ${failureReason}`,
+  );
+}
+
+function printStackOutputs(config: CdkRuntimeConfig, env: NodeJS.ProcessEnv): void {
+  const outputs = describeStack(config, env)?.Outputs ?? [];
   if (!outputs.length) {
     return;
   }
@@ -263,6 +390,7 @@ export function cdkDeploy(config: CdkRuntimeConfig, requireApproval: boolean): v
       );
     }
     runCloudFormationDeployWithRole(config, template, env);
+    assertStackDeploySucceeded(config, env);
     printStackOutputs(config, env);
     return;
   }
@@ -275,6 +403,7 @@ export function cdkDeploy(config: CdkRuntimeConfig, requireApproval: boolean): v
     ...(requireApproval ? [] : ["--require-approval", "never"]),
   ];
   runCdk(deployArgs, env);
+  assertStackDeploySucceeded(config, env);
   printStackOutputs(config, env);
 }
 
