@@ -28,11 +28,21 @@ import {
   EVENTBRIDGE_CONFIG,
   eventbridgeYamlcdkMessagingSchema,
 } from "./eventbridge/model.js";
+import {
+  KINESIS_FIREHOSE_CONFIG,
+  firehoseYamlcdkMessagingSchema,
+} from "./kinesisfirehose/model.js";
+import {
+  OPENSEARCH_SERVERLESS_CONFIG,
+  openSearchYamlcdkStorageSchema,
+} from "./opensearchserverless/model.js";
 import { apisDomain } from "./apis/compiler.js";
 import { cloudfrontDomain } from "./cloudfront/compiler.js";
 import { dynamodbDomain } from "./dynamodb/compiler.js";
 import { eventbridgeDomain } from "./eventbridge/compiler.js";
 import { functionsDomain } from "./functions/compiler.js";
+import { kinesisfirehoseDomain } from "./kinesisfirehose/compiler.js";
+import { opensearchserverlessDomain } from "./opensearchserverless/compiler.js";
 import { s3Domain } from "./s3/compiler.js";
 import { snsDomain } from "./sns/compiler.js";
 import { sqsDomain } from "./sqs/compiler.js";
@@ -95,6 +105,36 @@ export const domainManifest: readonly DomainDescriptor[] = [
         namespace: "messaging",
         key: "sns",
         schema: snsYamlcdkMessagingSchema,
+        createDefault: () => ({}),
+      },
+    ],
+  },
+  {
+    id: "kinesisfirehose",
+    order: 42,
+    role: "resource",
+    plugin: kinesisfirehoseDomain,
+    configKey: KINESIS_FIREHOSE_CONFIG,
+    yamlcdkSections: [
+      {
+        namespace: "messaging",
+        key: "firehose",
+        schema: firehoseYamlcdkMessagingSchema,
+        createDefault: () => ({}),
+      },
+    ],
+  },
+  {
+    id: "opensearchserverless",
+    order: 45,
+    role: "resource",
+    plugin: opensearchserverlessDomain,
+    configKey: OPENSEARCH_SERVERLESS_CONFIG,
+    yamlcdkSections: [
+      {
+        namespace: "storage",
+        key: "opensearch",
+        schema: openSearchYamlcdkStorageSchema,
         createDefault: () => ({}),
       },
     ],

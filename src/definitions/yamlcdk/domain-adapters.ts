@@ -33,6 +33,16 @@ import {
   cloudfrontYamlcdkOriginRequestPoliciesSchema,
   type CloudFrontDomainConfig,
 } from "../../domains/cloudfront/model.js";
+import {
+  OPENSEARCH_SERVERLESS_CONFIG,
+  openSearchYamlcdkStorageSchema,
+  type OpenSearchServerlessDomainConfig,
+} from "../../domains/opensearchserverless/model.js";
+import {
+  KINESIS_FIREHOSE_CONFIG,
+  firehoseYamlcdkMessagingSchema,
+  type KinesisFirehoseDomainConfig,
+} from "../../domains/kinesisfirehose/model.js";
 
 function adaptS3(config: NormalizedServiceConfig): S3DomainConfig {
   return {
@@ -81,6 +91,18 @@ function adaptCloudfront(config: NormalizedServiceConfig): CloudFrontDomainConfi
   };
 }
 
+function adaptOpenSearch(
+  config: NormalizedServiceConfig,
+): OpenSearchServerlessDomainConfig {
+  return openSearchYamlcdkStorageSchema.parse(config.storage.opensearch);
+}
+
+function adaptFirehose(
+  config: NormalizedServiceConfig,
+): KinesisFirehoseDomainConfig {
+  return firehoseYamlcdkMessagingSchema.parse(config.messaging.firehose);
+}
+
 export function adaptDomainConfigsFromYamlcdk(
   config: NormalizedServiceConfig,
 ): DomainConfigs {
@@ -92,5 +114,7 @@ export function adaptDomainConfigsFromYamlcdk(
   domainConfigs.set(EVENTBRIDGE_CONFIG, adaptEventBridge(config));
   domainConfigs.set(APIS_CONFIG, adaptApis(config));
   domainConfigs.set(CLOUDFRONT_CONFIG, adaptCloudfront(config));
+  domainConfigs.set(OPENSEARCH_SERVERLESS_CONFIG, adaptOpenSearch(config));
+  domainConfigs.set(KINESIS_FIREHOSE_CONFIG, adaptFirehose(config));
   return domainConfigs;
 }

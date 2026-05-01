@@ -196,6 +196,36 @@ functions:
       );
     });
 
+    test("accepts Fn::ImportValue intrinsic environment values in yamlcdk native config", () => {
+      const { model, template } = buildDefinitionFromYaml(`
+service: intrinsic-env-import
+functions:
+  worker:
+    handler: src/worker.handler
+    build:
+      mode: none
+    environment:
+      OPEN_SEARCH_ENDPOINT:
+        Fn::ImportValue: consumer-search-endpoint
+`);
+
+      expect(model.functions.worker.environment?.OPEN_SEARCH_ENDPOINT).toEqual({
+        "Fn::ImportValue": "consumer-search-endpoint",
+      });
+      template.hasResourceProperties(
+        "AWS::Lambda::Function",
+        Match.objectLike({
+          Environment: {
+            Variables: {
+              OPEN_SEARCH_ENDPOINT: Match.objectLike({
+                "Fn::ImportValue": "consumer-search-endpoint",
+              }),
+            },
+          },
+        }),
+      );
+    });
+
     test("creates a lambda function URL from function url config", () => {
       const { model, template } = buildDefinitionFromYaml(`
 service: function-url
@@ -346,9 +376,61 @@ storage:
         }),
       );
     });
+
+    test("creates OpenSearch Serverless resources from storage.opensearch", () => {
+      const { template } = buildDefinitionFromYaml(`
+service: opensearch-native
+storage:
+  opensearch:
+    autoCreatePolicies: true
+    collections:
+      search:
+        type: SEARCH
+    vpcEndpoints:
+      privateEndpoint:
+        vpcId: vpc-12345678
+        subnetIds:
+          - subnet-11111111
+        securityGroupIds:
+          - sg-12345678
+`);
+
+      template.resourceCountIs("AWS::OpenSearchServerless::Collection", 1);
+      template.resourceCountIs("AWS::OpenSearchServerless::SecurityPolicy", 1);
+      template.resourceCountIs("AWS::OpenSearchServerless::AccessPolicy", 1);
+      template.resourceCountIs("AWS::OpenSearchServerless::VpcEndpoint", 1);
+    });
   });
 
   describe("messaging section", () => {
+    test("creates a Firehose delivery stream from messaging.firehose", () => {
+      const { template } = buildDefinitionFromYaml(`
+service: firehose-native
+messaging:
+  firehose:
+    helperDefaults: true
+    streams:
+      audit:
+        properties:
+          ExtendedS3DestinationConfiguration:
+            BucketARN: arn:aws:s3:::audit-bucket
+            RoleARN: arn:aws:iam::123456789012:role/FirehoseRole
+`);
+
+      template.resourceCountIs("AWS::KinesisFirehose::DeliveryStream", 1);
+      template.hasResourceProperties(
+        "AWS::KinesisFirehose::DeliveryStream",
+        Match.objectLike({
+          DeliveryStreamName: "audit-dev",
+          DeliveryStreamType: "DirectPut",
+          ExtendedS3DestinationConfiguration: Match.objectLike({
+            BucketARN: "arn:aws:s3:::audit-bucket",
+            RoleARN: "arn:aws:iam::123456789012:role/FirehoseRole",
+          }),
+        }),
+      );
+    });
+
     test("creates an SQS queue without visibilityTimeout by default", () => {
       const { template } = buildDefinitionFromYaml(`
 service: sqs-defaults

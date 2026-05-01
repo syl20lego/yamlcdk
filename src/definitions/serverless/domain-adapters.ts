@@ -10,6 +10,8 @@ import { SNS_CONFIG } from "../../domains/sns/model.js";
 import { EVENTBRIDGE_CONFIG } from "../../domains/eventbridge/model.js";
 import { APIS_CONFIG } from "../../domains/apis/model.js";
 import { CLOUDFRONT_CONFIG } from "../../domains/cloudfront/model.js";
+import { OPENSEARCH_SERVERLESS_CONFIG } from "../../domains/opensearchserverless/model.js";
+import { KINESIS_FIREHOSE_CONFIG } from "../../domains/kinesisfirehose/model.js";
 
 // ─── Read: DomainConfigs → ServerlessDomainState ────────────
 
@@ -27,6 +29,17 @@ export function readServerlessDomainStateFromConfigs(
     cachePolicies: cf?.cachePolicies ?? {},
     originRequestPolicies: cf?.originRequestPolicies ?? {},
     distributions: cf?.distributions ?? {},
+  };
+  state.opensearchserverless = domainConfigs.get(OPENSEARCH_SERVERLESS_CONFIG) ?? {
+    collections: {},
+    accessPolicies: {},
+    securityPolicies: {},
+    vpcEndpoints: {},
+    autoCreatePolicies: false,
+  };
+  state.kinesisfirehose = domainConfigs.get(KINESIS_FIREHOSE_CONFIG) ?? {
+    streams: {},
+    helperDefaults: false,
   };
   return state;
 }
@@ -48,4 +61,6 @@ export function writeServerlessDomainStateToConfigs(
     originRequestPolicies: state.cloudfront.originRequestPolicies,
     distributions: state.cloudfront.distributions,
   });
+  domainConfigs.set(OPENSEARCH_SERVERLESS_CONFIG, state.opensearchserverless);
+  domainConfigs.set(KINESIS_FIREHOSE_CONFIG, state.kinesisfirehose);
 }

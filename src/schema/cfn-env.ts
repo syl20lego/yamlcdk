@@ -2,7 +2,7 @@
  * Zod schemas and TypeScript types for CloudFormation intrinsic
  * function values that may appear as Lambda environment variable values.
  *
- * Supported intrinsics: Ref, Fn::GetAtt, Fn::Sub, Fn::Join.
+ * Supported intrinsics: Ref, Fn::GetAtt, Fn::Sub, Fn::Join, Fn::ImportValue.
  */
 
 import { z } from "zod";
@@ -26,6 +26,10 @@ export const cfnJoinEnvSchema = z.object({
   "Fn::Join": z.tuple([z.string(), z.array(z.unknown()).min(1)]),
 });
 
+export const cfnImportValueEnvSchema = z.object({
+  "Fn::ImportValue": z.union([z.string().min(1), z.record(z.string(), z.unknown())]),
+});
+
 // ─── Union of all supported intrinsics ──────────────────────
 
 export const cfnIntrinsicEnvSchema = z.union([
@@ -33,6 +37,7 @@ export const cfnIntrinsicEnvSchema = z.union([
   cfnGetAttEnvSchema,
   cfnSubEnvSchema,
   cfnJoinEnvSchema,
+  cfnImportValueEnvSchema,
 ]);
 
 export type CfnIntrinsicEnv = z.infer<typeof cfnIntrinsicEnvSchema>;

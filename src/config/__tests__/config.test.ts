@@ -318,6 +318,72 @@ describe("config validation", () => {
     expect(normalized.functions.processor.events?.eventbridge).toHaveLength(1);
   });
 
+  test("supports Fn::ImportValue in function environment", () => {
+    const raw = validateServiceConfig({
+      service: "demo",
+      functions: {
+        worker: {
+          handler: "src/worker.handler",
+          environment: {
+            OPEN_SEARCH_ENDPOINT: {
+              "Fn::ImportValue": "consumer-search-endpoint",
+            },
+          },
+        },
+      },
+    });
+
+    const normalized = normalizeConfig(raw);
+    expect(normalized.functions.worker.environment?.OPEN_SEARCH_ENDPOINT).toEqual({
+      "Fn::ImportValue": "consumer-search-endpoint",
+    });
+  });
+
+  test("rejects SQS event batchSize greater than 10 when maximumBatchingWindow is missing", () => {
+    expect(() =>
+      validateServiceConfig({
+        service: "demo",
+        messaging: {
+          sqs: { jobs: {} },
+        },
+        functions: {
+          worker: {
+            handler: "src/worker.handler",
+            events: {
+              sqs: [{ queue: "ref:jobs", batchSize: 100 }],
+            },
+          },
+        },
+      }),
+    ).toThrow("Invalid YAML config");
+  });
+
+  test("supports SQS event batchSize greater than 10 when maximumBatchingWindow is set", () => {
+    const raw = validateServiceConfig({
+      service: "demo",
+      messaging: {
+        sqs: { jobs: {} },
+      },
+      functions: {
+        worker: {
+          handler: "src/worker.handler",
+          events: {
+            sqs: [
+              { queue: "ref:jobs", batchSize: 100, maximumBatchingWindow: 60 },
+            ],
+          },
+        },
+      },
+    });
+
+    const normalized = normalizeConfig(raw);
+    expect(normalized.functions.worker.events?.sqs?.[0]).toEqual({
+      queue: "ref:jobs",
+      batchSize: 100,
+      maximumBatchingWindow: 60,
+    });
+  });
+
   test("supports dynamodb stream option", () => {
     const raw = validateServiceConfig({
       service: "demo",

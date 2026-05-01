@@ -8,6 +8,8 @@ import { S3_CONFIG } from "../../../domains/s3/model.js";
 import { SNS_CONFIG } from "../../../domains/sns/model.js";
 import { SQS_CONFIG } from "../../../domains/sqs/model.js";
 import { EVENTBRIDGE_CONFIG } from "../../../domains/eventbridge/model.js";
+import { OPENSEARCH_SERVERLESS_CONFIG } from "../../../domains/opensearchserverless/model.js";
+import { KINESIS_FIREHOSE_CONFIG } from "../../../domains/kinesisfirehose/model.js";
 
 describe("serverless domain adapters", () => {
   test("readServerlessDomainStateFromConfigs reads all configured domain slices", () => {
@@ -32,6 +34,31 @@ describe("serverless domain adapters", () => {
       originRequestPolicies: {},
       distributions: {},
     });
+    configs.set(OPENSEARCH_SERVERLESS_CONFIG, {
+      collections: {
+        SearchCollection: {
+          name: "search-dev",
+          type: "SEARCH",
+        },
+      },
+      accessPolicies: {},
+      securityPolicies: {},
+      vpcEndpoints: {},
+      autoCreatePolicies: false,
+    });
+    configs.set(KINESIS_FIREHOSE_CONFIG, {
+      streams: {
+        AuditStream: {
+          properties: {
+            ExtendedS3DestinationConfiguration: {
+              BucketARN: "arn:aws:s3:::audit-bucket",
+              RoleARN: "arn:aws:iam::123456789012:role/FirehoseRole",
+            },
+          },
+        },
+      },
+      helperDefaults: true,
+    });
 
     const state = readServerlessDomainStateFromConfigs(configs);
 
@@ -46,6 +73,31 @@ describe("serverless domain adapters", () => {
       cachePolicies: {},
       originRequestPolicies: {},
       distributions: {},
+    });
+    expect(state.opensearchserverless).toEqual({
+      collections: {
+        SearchCollection: {
+          name: "search-dev",
+          type: "SEARCH",
+        },
+      },
+      accessPolicies: {},
+      securityPolicies: {},
+      vpcEndpoints: {},
+      autoCreatePolicies: false,
+    });
+    expect(state.kinesisfirehose).toEqual({
+      streams: {
+        AuditStream: {
+          properties: {
+            ExtendedS3DestinationConfiguration: {
+              BucketARN: "arn:aws:s3:::audit-bucket",
+              RoleARN: "arn:aws:iam::123456789012:role/FirehoseRole",
+            },
+          },
+        },
+      },
+      helperDefaults: true,
     });
   });
 
@@ -67,6 +119,31 @@ describe("serverless domain adapters", () => {
         originRequestPolicies: {},
         distributions: {},
       },
+      opensearchserverless: {
+        collections: {
+          SearchCollection: {
+            type: "SEARCH",
+          },
+        },
+        accessPolicies: {},
+        securityPolicies: {},
+        vpcEndpoints: {},
+        autoCreatePolicies: true,
+      },
+      kinesisfirehose: {
+        streams: {
+          AuditStream: {
+            type: "DirectPut",
+            properties: {
+              ExtendedS3DestinationConfiguration: {
+                BucketARN: "arn:aws:s3:::audit-bucket",
+                RoleARN: "arn:aws:iam::123456789012:role/FirehoseRole",
+              },
+            },
+          },
+        },
+        helperDefaults: true,
+      },
     });
 
     expect(configs.require(S3_CONFIG)).toEqual({ buckets: { assets: { versioned: true } } });
@@ -87,6 +164,31 @@ describe("serverless domain adapters", () => {
       cachePolicies: {},
       originRequestPolicies: {},
       distributions: {},
+    });
+    expect(configs.require(OPENSEARCH_SERVERLESS_CONFIG)).toEqual({
+      collections: {
+        SearchCollection: {
+          type: "SEARCH",
+        },
+      },
+      accessPolicies: {},
+      securityPolicies: {},
+      vpcEndpoints: {},
+      autoCreatePolicies: true,
+    });
+    expect(configs.require(KINESIS_FIREHOSE_CONFIG)).toEqual({
+      streams: {
+        AuditStream: {
+          type: "DirectPut",
+          properties: {
+            ExtendedS3DestinationConfiguration: {
+              BucketARN: "arn:aws:s3:::audit-bucket",
+              RoleARN: "arn:aws:iam::123456789012:role/FirehoseRole",
+            },
+          },
+        },
+      },
+      helperDefaults: true,
     });
   });
 });

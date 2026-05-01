@@ -52,8 +52,13 @@ export function createS3Event(
 export function createSqsEvent(
   queue: string,
   batchSize?: number,
+  maximumBatchingWindow?: number,
 ): EventDeclaration {
-  return { type: "sqs", queue, batchSize };
+  const event: EventDeclaration = { type: "sqs", queue, batchSize };
+  if (maximumBatchingWindow !== undefined) {
+    return { ...event, maximumBatchingWindow };
+  }
+  return event;
 }
 
 export function createSnsEvent(topic: string): EventDeclaration {

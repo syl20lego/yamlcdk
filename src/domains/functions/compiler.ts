@@ -107,6 +107,7 @@ function summarizeLinkedEvent(event: EventDeclaration): Record<string, unknown> 
         type: event.type,
         queue: event.queue,
         batchSize: event.batchSize ?? 10,
+        maximumBatchingWindow: event.maximumBatchingWindow ?? 0,
       };
     case "sns":
       return { type: event.type, topic: event.topic };
@@ -200,6 +201,9 @@ function resolveRefValueFromConstructRef(
   if ("functionName" in target) {
     return cdk.Token.asString((target as lambda.Function).functionName);
   }
+  if (target instanceof cdk.CfnResource) {
+    return cdk.Token.asString(target.ref);
+  }
 
   return undefined;
 }
@@ -236,6 +240,9 @@ function resolveGetAttValueFromConstructRef(
   }
   if ("functionArn" in target && attribute === "Arn") {
     return cdk.Token.asString((target as lambda.Function).functionArn);
+  }
+  if (target instanceof cdk.CfnResource) {
+    return cdk.Token.asString(target.getAtt(attribute));
   }
 
   return undefined;
@@ -276,6 +283,13 @@ function resolveEnvIntrinsic(value: unknown, refs: Record<string, Construct>): s
         separator,
         parts.map((p) => resolveEnvIntrinsic(p, refs)),
       );
+    }
+    if ("Fn::ImportValue" in obj) {
+      const importValue = obj["Fn::ImportValue"];
+      if (typeof importValue === "string") {
+        return cdk.Fn.importValue(importValue);
+      }
+      return cdk.Fn.importValue(resolveEnvIntrinsic(importValue, refs));
     }
   }
   throw new Error(`Unsupported environment variable intrinsic: ${JSON.stringify(value)}`);

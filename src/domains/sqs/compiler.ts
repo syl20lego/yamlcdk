@@ -6,6 +6,14 @@ import { normalizeManagedResourceRef } from "../../compiler/resource-refs.js";
 import { SQS_CONFIG } from "./model.js";
 import type { DomainPlugin } from "../../compiler/plugins/index.js";
 
+function isKnownFifoQueueArn(queueRef: string): boolean {
+  if (Token.isUnresolved(queueRef) || !queueRef.startsWith("arn:")) {
+    return false;
+  }
+  const queueName = queueRef.split(":").at(-1) ?? "";
+  return queueName.toLowerCase().endsWith(".fifo");
+}
+
 export const sqsDomain: DomainPlugin = {
   name: "sqs",
 
@@ -58,9 +66,20 @@ export const sqsDomain: DomainPlugin = {
         queue = managedQueue as sqs.IQueue;
       }
 
+      const batchSize = event.batchSize ?? 10;
+      if (batchSize > 10 && isKnownFifoQueueArn(event.queue)) {
+        throw new Error(
+          `SQS event for function "${event.functionName}" targets a FIFO queue; batchSize must be <= 10.`,
+        );
+      }
+
       event.fnResource.addEventSource(
         new lambdaEventSources.SqsEventSource(queue, {
-          batchSize: event.batchSize ?? 10,
+          batchSize,
+          maxBatchingWindow:
+            event.maximumBatchingWindow !== undefined
+              ? Duration.seconds(event.maximumBatchingWindow)
+              : undefined,
         }),
       );
     }

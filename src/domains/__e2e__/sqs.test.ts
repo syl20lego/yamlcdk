@@ -81,4 +81,53 @@ describe("sqs domain e2e", () => {
       }),
     );
   });
+
+  test("sets MaximumBatchingWindowInSeconds when configured", () => {
+    const { template } = synthServiceConfig({
+      functions: {
+        processor: functionConfig({
+          events: {
+            sqs: [
+              {
+                queue: "ref:jobs",
+                batchSize: 100,
+                maximumBatchingWindow: 60,
+              },
+            ],
+          },
+        }),
+      },
+      messaging: {
+        sqs: { jobs: {} },
+      },
+    });
+
+    template.hasResourceProperties(
+      "AWS::Lambda::EventSourceMapping",
+      Match.objectLike({
+        BatchSize: 100,
+        MaximumBatchingWindowInSeconds: 60,
+      }),
+    );
+  });
+
+  test("rejects batchSize greater than 10 for a known FIFO queue arn", () => {
+    expect(() =>
+      synthServiceConfig({
+        functions: {
+          processor: functionConfig({
+            events: {
+              sqs: [
+                {
+                  queue: "arn:aws:sqs:us-east-1:123456789012:jobs.fifo",
+                  batchSize: 100,
+                  maximumBatchingWindow: 60,
+                },
+              ],
+            },
+          }),
+        },
+      }),
+    ).toThrow(/FIFO queue; batchSize must be <= 10/);
+  });
 });

@@ -151,6 +151,52 @@ resources:
     );
   });
 
+  test("does not synthesize EventBridge rules for disabled schedule events", () => {
+    const source = `
+service: demo
+provider:
+  name: aws
+functions:
+  worker:
+    handler: src/worker.handler
+    events:
+      - schedule:
+          enabled: false
+          rate: rate(5 minutes)
+`;
+    let result: ReturnType<typeof buildDefinitionFromYaml> | undefined;
+
+    expect(() => {
+      result = buildDefinitionFromYaml(source, "serverless.yml");
+    }).not.toThrow();
+
+    result?.template.resourceCountIs("AWS::Events::Rule", 0);
+  });
+
+  test("does not synthesize EventBridge rules for disabled eventBridge object events", () => {
+    const source = `
+service: demo
+provider:
+  name: aws
+functions:
+  worker:
+    handler: src/worker.handler
+    events:
+      - eventBridge:
+          enabled: false
+          pattern:
+            source:
+              - marketing
+`;
+    let result: ReturnType<typeof buildDefinitionFromYaml> | undefined;
+
+    expect(() => {
+      result = buildDefinitionFromYaml(source, "serverless.yml");
+    }).not.toThrow();
+
+    result?.template.resourceCountIs("AWS::Events::Rule", 0);
+  });
+
   test("supports intrinsic external SQS queue ARN event mappings", () => {
     const exportName = "shared-jobs-queue-arn";
     const { template } = buildDefinitionFromYaml(
@@ -541,6 +587,90 @@ resources:
               }),
             ]),
           }),
+        }),
+      );
+    });
+  });
+
+  describe("OpenSearch Serverless resources (under resources.Resources)", () => {
+    test("creates Collection, AccessPolicy, SecurityPolicy, and VpcEndpoint resources", () => {
+      const { template } = buildDefinitionFromYaml(
+        `
+service: demo
+provider:
+  name: aws
+  stage: dev
+  region: us-east-1
+resources:
+  Resources:
+    SearchCollection:
+      Type: AWS::OpenSearchServerless::Collection
+      Properties:
+        Name: search-dev
+        Type: SEARCH
+    SearchEncryptionPolicy:
+      Type: AWS::OpenSearchServerless::SecurityPolicy
+      Properties:
+        Name: search-encryption
+        Type: encryption
+        Policy: >-
+          [{"Rules":[{"ResourceType":"collection","Resource":["collection/search-dev"]}],"AWSOwnedKey":true}]
+    SearchAccessPolicy:
+      Type: AWS::OpenSearchServerless::AccessPolicy
+      Properties:
+        Name: search-data
+        Type: data
+        Policy: >-
+          [{"Rules":[{"ResourceType":"collection","Resource":["collection/search-dev"],"Permission":["aoss:*"]}],"Principal":["arn:aws:iam::123456789012:root"]}]
+    SearchVpcEndpoint:
+      Type: AWS::OpenSearchServerless::VpcEndpoint
+      Properties:
+        Name: search-endpoint
+        VpcId: vpc-12345678
+        SubnetIds:
+          - subnet-11111111
+        SecurityGroupIds:
+          - sg-12345678
+`,
+        "serverless.yml",
+      );
+
+      template.resourceCountIs("AWS::OpenSearchServerless::Collection", 1);
+      template.resourceCountIs("AWS::OpenSearchServerless::SecurityPolicy", 1);
+      template.resourceCountIs("AWS::OpenSearchServerless::AccessPolicy", 1);
+      template.resourceCountIs("AWS::OpenSearchServerless::VpcEndpoint", 1);
+    });
+  });
+
+  describe("Kinesis Firehose resources (under resources.Resources)", () => {
+    test("creates DeliveryStream resources", () => {
+      const { template } = buildDefinitionFromYaml(
+        `
+service: demo
+provider:
+  name: aws
+  stage: dev
+  region: us-east-1
+resources:
+  Resources:
+    AuditDeliveryStream:
+      Type: AWS::KinesisFirehose::DeliveryStream
+      Properties:
+        DeliveryStreamName: audit-stream
+        DeliveryStreamType: DirectPut
+        ExtendedS3DestinationConfiguration:
+          BucketARN: arn:aws:s3:::audit-bucket
+          RoleARN: arn:aws:iam::123456789012:role/FirehoseRole
+`,
+        "serverless.yml",
+      );
+
+      template.resourceCountIs("AWS::KinesisFirehose::DeliveryStream", 1);
+      template.hasResourceProperties(
+        "AWS::KinesisFirehose::DeliveryStream",
+        Match.objectLike({
+          DeliveryStreamName: "audit-stream",
+          DeliveryStreamType: "DirectPut",
         }),
       );
     });

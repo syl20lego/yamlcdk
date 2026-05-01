@@ -13,7 +13,8 @@ functions:
     events:
       sqs:
         - queue: Jobs
-          batchSize: 5
+          batchSize: 100
+          maximumBatchingWindow: 60
 messaging:
   sqs:
     Jobs: {}
@@ -30,7 +31,8 @@ functions:
     events:
       - sqs:
           arn: !GetAtt Jobs.Arn
-          batchSize: 5
+          batchSize: 100
+          maximumBatchingWindow: 60
 resources:
   Resources:
     Jobs:
@@ -57,13 +59,19 @@ Resources:
     Properties:
       FunctionName: !Ref WorkerFunction
       EventSourceArn: !GetAtt Jobs.Arn
-      BatchSize: 5
+      BatchSize: 100
+      MaximumBatchingWindowInSeconds: 60
 `,
       "template.yml",
     );
 
     expect(yamlcdk.model.functions.worker.events).toEqual([
-      { type: "sqs", queue: "Jobs", batchSize: 5 },
+      {
+        type: "sqs",
+        queue: "Jobs",
+        batchSize: 100,
+        maximumBatchingWindow: 60,
+      },
     ]);
     expect(serverless.model.functions.worker.events).toEqual(
       yamlcdk.model.functions.worker.events,
@@ -73,14 +81,16 @@ Resources:
     );
 
     yamlcdk.template.hasResourceProperties("AWS::Lambda::EventSourceMapping", {
-      BatchSize: 5,
+      BatchSize: 100,
+      MaximumBatchingWindowInSeconds: 60,
     });
     serverless.template.hasResourceProperties("AWS::Lambda::EventSourceMapping", {
-      BatchSize: 5,
+      BatchSize: 100,
+      MaximumBatchingWindowInSeconds: 60,
     });
     cloudformation.template.hasResourceProperties(
       "AWS::Lambda::EventSourceMapping",
-      { BatchSize: 5 },
+      { BatchSize: 100, MaximumBatchingWindowInSeconds: 60 },
     );
   });
 });

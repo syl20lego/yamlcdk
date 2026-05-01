@@ -94,14 +94,16 @@ describe("PluginRegistry", () => {
 });
 
 describe("native domains", () => {
-  test("all 8 native domains are declared", () => {
-    expect(nativeDomains).toHaveLength(8);
+  test("all 10 native domains are declared", () => {
+    expect(nativeDomains).toHaveLength(10);
 
     const names = nativeDomains.map((domain) => domain.name);
     expect(names).toContain("s3");
     expect(names).toContain("dynamodb");
     expect(names).toContain("sqs");
     expect(names).toContain("sns");
+    expect(names).toContain("kinesisfirehose");
+    expect(names).toContain("opensearchserverless");
     expect(names).toContain("functions");
     expect(names).toContain("eventbridge");
     expect(names).toContain("apis");
@@ -111,8 +113,10 @@ describe("native domains", () => {
   test("createNativeDomainRegistry registers all domains", () => {
     const registry = createNativeDomainRegistry();
 
-    expect(registry.all()).toHaveLength(8);
+    expect(registry.all()).toHaveLength(10);
     expect(registry.get("s3")).toBeDefined();
+    expect(registry.get("kinesisfirehose")).toBeDefined();
+    expect(registry.get("opensearchserverless")).toBeDefined();
     expect(registry.get("functions")).toBeDefined();
     expect(registry.get("cloudfront")).toBeDefined();
   });
@@ -124,6 +128,8 @@ describe("native domains", () => {
     const dynamodbIndex = names.indexOf("dynamodb");
     const sqsIndex = names.indexOf("sqs");
     const snsIndex = names.indexOf("sns");
+    const firehoseIndex = names.indexOf("kinesisfirehose");
+    const openSearchServerlessIndex = names.indexOf("opensearchserverless");
     const eventbridgeIndex = names.indexOf("eventbridge");
     const apisIndex = names.indexOf("apis");
 
@@ -131,6 +137,8 @@ describe("native domains", () => {
     expect(dynamodbIndex).toBeLessThan(functionsIndex);
     expect(sqsIndex).toBeLessThan(functionsIndex);
     expect(snsIndex).toBeLessThan(functionsIndex);
+    expect(firehoseIndex).toBeLessThan(functionsIndex);
+    expect(openSearchServerlessIndex).toBeLessThan(functionsIndex);
 
     expect(functionsIndex).toBeLessThan(eventbridgeIndex);
     expect(functionsIndex).toBeLessThan(apisIndex);

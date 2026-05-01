@@ -81,6 +81,27 @@ export const eventBusReferenceSchema = z.union([
 
 export type EventBusReference = z.infer<typeof eventBusReferenceSchema>;
 
+const sqsEventDeclarationSchema = z
+  .object({
+    type: z.literal("sqs"),
+    queue: z.string().min(1),
+    batchSize: z.number().int().min(1).max(10000).optional(),
+    maximumBatchingWindow: z.number().int().min(0).max(300).optional(),
+  })
+  .superRefine((value, ctx) => {
+    if (
+      value.batchSize !== undefined &&
+      value.batchSize > 10 &&
+      (value.maximumBatchingWindow === undefined || value.maximumBatchingWindow <= 0)
+    ) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["maximumBatchingWindow"],
+        message: "maximumBatchingWindow must be > 0 when batchSize is greater than 10.",
+      });
+    }
+  });
+
 /**
  * Model-level event declarations.
  *
@@ -106,11 +127,7 @@ export const eventDeclarationSchema = z.discriminatedUnion("type", [
     bucket: z.string().min(1),
     events: z.array(z.string().min(1)).min(1),
   }),
-  z.object({
-    type: z.literal("sqs"),
-    queue: z.string().min(1),
-    batchSize: z.number().int().min(1).max(10000).optional(),
-  }),
+  sqsEventDeclarationSchema,
   z.object({
     type: z.literal("sns"),
     topic: z.string().min(1),

@@ -33,6 +33,7 @@ describe("domain schema registry", () => {
     expect(() =>
       normalizedSections.messaging.parse({
         eventbridge: {},
+        firehose: {},
         sqs: {},
         sns: {},
       }),
@@ -48,9 +49,14 @@ describe("domain schema registry", () => {
   test("normalizes domain sections with registration defaults", () => {
     const normalized = normalizeYamlcdkDomainSections({});
 
-    expect(Object.keys(normalized.storage).sort()).toEqual(["dynamodb", "s3"]);
+    expect(Object.keys(normalized.storage).sort()).toEqual([
+      "dynamodb",
+      "opensearch",
+      "s3",
+    ]);
     expect(Object.keys(normalized.messaging).sort()).toEqual([
       "eventbridge",
+      "firehose",
       "sns",
       "sqs",
     ]);
@@ -60,7 +66,9 @@ describe("domain schema registry", () => {
       "originRequestPolicies",
     ]);
     expect(normalized.storage.s3).toEqual({});
+    expect(normalized.storage.opensearch).toEqual({});
     expect(normalized.messaging.eventbridge).toEqual({});
+    expect(normalized.messaging.firehose).toEqual({});
     expect(normalized.messaging.sqs).toEqual({});
   });
 
@@ -84,10 +92,12 @@ describe("domain schema registry", () => {
       uploads: { versioned: true },
     });
     expect(normalized.storage.dynamodb).toEqual({});
+    expect(normalized.storage.opensearch).toEqual({});
     expect(normalized.messaging.sns).toEqual({
       alerts: { displayName: "Alerts" },
     });
     expect(normalized.messaging.eventbridge).toEqual({});
+    expect(normalized.messaging.firehose).toEqual({});
     expect(normalized.messaging.sqs).toEqual({});
   });
 });

@@ -60,8 +60,58 @@ storage:
         type: string
       billingMode: PAY_PER_REQUEST
       stream: NEW_AND_OLD_IMAGES
+  opensearch:
+    autoCreatePolicies: false
+    collections:
+      search:
+        name: search-dev
+        type: SEARCH
+    securityPolicies:
+      searchEncryption:
+        name: search-encryption
+        type: encryption
+        policy:
+          - Rules:
+              - ResourceType: collection
+                Resource:
+                  - collection/search-dev
+            AWSOwnedKey: true
+    accessPolicies:
+      searchData:
+        name: search-data
+        type: data
+        policy:
+          - Rules:
+              - ResourceType: collection
+                Resource:
+                  - collection/search-dev
+                Permission:
+                  - aoss:*
+              - ResourceType: index
+                Resource:
+                  - index/search-dev/*
+                Permission:
+                  - aoss:*
+            Principal:
+              - arn:aws:iam::123456789012:root
+    vpcEndpoints:
+      searchEndpoint:
+        name: search-endpoint
+        vpcId: vpc-12345678
+        subnetIds:
+          - subnet-11111111
+        securityGroupIds:
+          - sg-12345678
 
 messaging:
+  firehose:
+    helperDefaults: true
+    streams:
+      audit:
+        properties:
+          ExtendedS3DestinationConfiguration:
+            BucketARN: arn:aws:s3:::my-firehose-bucket
+            RoleARN: arn:aws:iam::123456789012:role/MyFirehoseRole
   sqs:
     jobs: {}
   sns:

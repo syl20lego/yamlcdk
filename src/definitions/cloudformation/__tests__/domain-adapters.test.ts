@@ -7,6 +7,8 @@ import { S3_CONFIG } from "../../../domains/s3/model.js";
 import { SNS_CONFIG } from "../../../domains/sns/model.js";
 import { SQS_CONFIG } from "../../../domains/sqs/model.js";
 import { EVENTBRIDGE_CONFIG } from "../../../domains/eventbridge/model.js";
+import { OPENSEARCH_SERVERLESS_CONFIG } from "../../../domains/opensearchserverless/model.js";
+import { KINESIS_FIREHOSE_CONFIG } from "../../../domains/kinesisfirehose/model.js";
 
 describe("adaptDomainConfigsFromCloudFormation", () => {
   test("maps each domain config to the typed DomainConfigs registry", () => {
@@ -48,6 +50,35 @@ describe("adaptDomainConfigsFromCloudFormation", () => {
         originRequestPolicies: {},
         distributions: {},
       },
+      opensearchserverless: {
+        collections: {
+          SearchCollection: {
+            name: "search-dev",
+            type: "SEARCH",
+          },
+        },
+        accessPolicies: {},
+        securityPolicies: {},
+        vpcEndpoints: {},
+        autoCreatePolicies: false,
+      },
+      kinesisfirehose: {
+        streams: {
+          AuditStream: {
+            name: "audit-stream",
+            type: "DirectPut",
+            properties: {
+              DeliveryStreamName: "audit-stream",
+              DeliveryStreamType: "DirectPut",
+              ExtendedS3DestinationConfiguration: {
+                BucketARN: "arn:aws:s3:::audit-bucket",
+                RoleARN: "arn:aws:iam::123456789012:role/FirehoseRole",
+              },
+            },
+          },
+        },
+        helperDefaults: false,
+      },
     };
 
     const domainConfigs = adaptDomainConfigsFromCloudFormation(input);
@@ -59,5 +90,11 @@ describe("adaptDomainConfigsFromCloudFormation", () => {
     expect(domainConfigs.require(EVENTBRIDGE_CONFIG)).toEqual(input.eventbridge);
     expect(domainConfigs.require(APIS_CONFIG)).toEqual(input.apis);
     expect(domainConfigs.require(CLOUDFRONT_CONFIG)).toEqual(input.cloudfront);
+    expect(domainConfigs.require(OPENSEARCH_SERVERLESS_CONFIG)).toEqual(
+      input.opensearchserverless,
+    );
+    expect(domainConfigs.require(KINESIS_FIREHOSE_CONFIG)).toEqual(
+      input.kinesisfirehose,
+    );
   });
 });

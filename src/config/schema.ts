@@ -34,6 +34,26 @@ const eventBusReferenceSchema = z.union([
   cfnGetAttEnvSchema,
 ]);
 
+const sqsEventSchema = z
+  .object({
+    queue: z.string().min(1),
+    batchSize: z.number().int().min(1).max(10000).optional(),
+    maximumBatchingWindow: z.number().int().min(0).max(300).optional(),
+  })
+  .superRefine((value, ctx) => {
+    if (
+      value.batchSize !== undefined &&
+      value.batchSize > 10 &&
+      (value.maximumBatchingWindow === undefined || value.maximumBatchingWindow <= 0)
+    ) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["maximumBatchingWindow"],
+        message: "maximumBatchingWindow must be > 0 when batchSize is greater than 10.",
+      });
+    }
+  });
+
 export const functionSchema = z.object({
   handler: z.string().min(1),
   runtime: runtimeSchema.optional(),
@@ -71,10 +91,7 @@ export const functionSchema = z.object({
         .optional(),
       sqs: z
         .array(
-          z.object({
-            queue: z.string().min(1),
-            batchSize: z.number().int().min(1).max(10000).optional(),
-          }),
+          sqsEventSchema,
         )
         .optional(),
       sns: z

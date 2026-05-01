@@ -204,7 +204,7 @@ function optionalEnvRecord(
       result[key] = entry;
     } else {
       throw new Error(
-        `${description}.${key} must be a scalar value or a supported CloudFormation intrinsic (Ref, Fn::GetAtt, Fn::Sub, Fn::Join).`,
+        `${description}.${key} must be a scalar value or a supported CloudFormation intrinsic (Ref, Fn::GetAtt, Fn::Sub, Fn::Join, Fn::ImportValue).`,
       );
     }
   }
@@ -639,7 +639,10 @@ function adaptHttpApiEvent(value: unknown, description: string): EventDeclaratio
   );
 }
 
-function adaptScheduleEvent(value: unknown, description: string): EventDeclaration {
+function adaptScheduleEvent(
+  value: unknown,
+  description: string,
+): EventDeclaration | undefined {
   if (typeof value === "string") {
     return createEventBridgeEvent({ schedule: value });
   }
@@ -650,7 +653,7 @@ function adaptScheduleEvent(value: unknown, description: string): EventDeclarati
 
   const config = value as Record<string, unknown>;
   if (config.enabled === false) {
-    throw new Error(`${description}.enabled=false is not supported yet.`);
+    return undefined;
   }
   if (config.input !== undefined || config.inputPath !== undefined) {
     throw new Error(
@@ -781,19 +784,53 @@ function adaptSqsEvent(
   const batchSize = optionalNumber(config.batchSize, `${description}.batchSize`) as
     | number
     | undefined;
+  const maximumBatchingWindow = optionalNumber(
+    config.maximumBatchingWindow,
+    `${description}.maximumBatchingWindow`,
+  ) as number | undefined;
+  if (batchSize !== undefined) {
+    if (!Number.isInteger(batchSize)) {
+      throw new Error(`${description}.batchSize must be an integer.`);
+    }
+    if (batchSize < 1 || batchSize > 10000) {
+      throw new Error(`${description}.batchSize must be between 1 and 10000.`);
+    }
+  }
+  if (maximumBatchingWindow !== undefined) {
+    if (!Number.isInteger(maximumBatchingWindow)) {
+      throw new Error(`${description}.maximumBatchingWindow must be an integer.`);
+    }
+    if (maximumBatchingWindow < 0 || maximumBatchingWindow > 300) {
+      throw new Error(
+        `${description}.maximumBatchingWindow must be between 0 and 300.`,
+      );
+    }
+  }
+  if (
+    batchSize !== undefined &&
+    batchSize > 10 &&
+    (maximumBatchingWindow === undefined || maximumBatchingWindow <= 0)
+  ) {
+    throw new Error(
+      `${description}.maximumBatchingWindow must be > 0 when batchSize is greater than 10.`,
+    );
+  }
+
+  const createEvent = (queueArn: string): EventDeclaration =>
+    createSqsEvent(queueArn, batchSize, maximumBatchingWindow);
 
   const queue = resolveLogicalId(config.arn);
   if (queue) {
     domains.sqs[queue] ??= {};
-    return createSqsEvent(queue, batchSize);
+    return createEvent(queue);
   }
 
   if (isArnLike(config.arn)) {
-    return createSqsEvent(config.arn, batchSize);
+    return createEvent(config.arn);
   }
 
   if (isCloudFormationIntrinsicLike(config.arn)) {
-    return createSqsEvent(Token.asString(config.arn), batchSize);
+    return createEvent(Token.asString(config.arn));
   }
 
   if (typeof config.arn === "string") {
@@ -843,14 +880,14 @@ function adaptStreamEvent(value: unknown, description: string): EventDeclaration
 function adaptEventBridgeEvent(
   value: unknown,
   description: string,
-): EventDeclaration {
+): EventDeclaration | undefined {
   if (value === null || typeof value !== "object" || Array.isArray(value)) {
     throw new Error(`${description} must be an object.`);
   }
 
   const config = value as Record<string, unknown>;
   if (config.enabled === false) {
-    throw new Error(`${description}.enabled=false is not supported yet.`);
+    return undefined;
   }
   if (
     config.input !== undefined ||
@@ -921,7 +958,10 @@ function adaptEvents(
         appendUniqueEvent(events, adaptHttpApiEvent(eventValue, description));
         break;
       case "schedule":
-        appendUniqueEvent(events, adaptScheduleEvent(eventValue, description));
+        {
+          const adapted = adaptScheduleEvent(eventValue, description);
+          if (adapted) appendUniqueEvent(events, adapted);
+        }
         break;
       case "s3":
         appendUniqueEvent(events, adaptS3Event(eventValue, description, domains));
@@ -936,7 +976,10 @@ function adaptEvents(
         appendUniqueEvent(events, adaptStreamEvent(eventValue, description));
         break;
       case "eventBridge":
-        appendUniqueEvent(events, adaptEventBridgeEvent(eventValue, description));
+        {
+          const adapted = adaptEventBridgeEvent(eventValue, description);
+          if (adapted) appendUniqueEvent(events, adapted);
+        }
         break;
       default:
         throw new Error(
@@ -1329,6 +1372,36 @@ function mergeDomainStates(
         ...topLevelState.cloudfront.distributions,
         ...resourceState.cloudfront.distributions,
       },
+    },
+    opensearchserverless: {
+      collections: {
+        ...topLevelState.opensearchserverless.collections,
+        ...resourceState.opensearchserverless.collections,
+      },
+      accessPolicies: {
+        ...topLevelState.opensearchserverless.accessPolicies,
+        ...resourceState.opensearchserverless.accessPolicies,
+      },
+      securityPolicies: {
+        ...topLevelState.opensearchserverless.securityPolicies,
+        ...resourceState.opensearchserverless.securityPolicies,
+      },
+      vpcEndpoints: {
+        ...topLevelState.opensearchserverless.vpcEndpoints,
+        ...resourceState.opensearchserverless.vpcEndpoints,
+      },
+      autoCreatePolicies:
+        topLevelState.opensearchserverless.autoCreatePolicies ||
+        resourceState.opensearchserverless.autoCreatePolicies,
+    },
+    kinesisfirehose: {
+      streams: {
+        ...topLevelState.kinesisfirehose.streams,
+        ...resourceState.kinesisfirehose.streams,
+      },
+      helperDefaults:
+        topLevelState.kinesisfirehose.helperDefaults ||
+        resourceState.kinesisfirehose.helperDefaults,
     },
   };
 }

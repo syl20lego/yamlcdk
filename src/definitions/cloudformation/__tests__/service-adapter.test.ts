@@ -6,6 +6,8 @@ import { DYNAMODB_CONFIG } from "../../../domains/dynamodb/model.js";
 import { SQS_CONFIG } from "../../../domains/sqs/model.js";
 import { SNS_CONFIG } from "../../../domains/sns/model.js";
 import { EVENTBRIDGE_CONFIG } from "../../../domains/eventbridge/model.js";
+import { OPENSEARCH_SERVERLESS_CONFIG } from "../../../domains/opensearchserverless/model.js";
+import { KINESIS_FIREHOSE_CONFIG } from "../../../domains/kinesisfirehose/model.js";
 
 describe("adaptCfnTemplate", () => {
   test("extracts service metadata", () => {
@@ -337,6 +339,7 @@ Resources:
       FunctionName: !Ref MyFunction
       EventSourceArn: !GetAtt MyQueue.Arn
       BatchSize: 5
+      MaximumBatchingWindowInSeconds: 60
 `);
     const model = adaptCfnTemplate(parsed, "t.yml");
     const events = model.functions.MyFunction.events;
@@ -345,6 +348,7 @@ Resources:
     if (events[0].type === "sqs") {
       expect(events[0].queue).toBe("MyQueue");
       expect(events[0].batchSize).toBe(5);
+      expect(events[0].maximumBatchingWindow).toBe(60);
     }
   });
 
@@ -698,6 +702,109 @@ Resources:
     expect(() => adaptCfnTemplate(parsed, "t.yml")).toThrow(
       "does not support yet",
     );
+  });
+
+  test("extracts OpenSearch Serverless resources into domain config", () => {
+    const parsed = parseCfnYaml(`
+AWSTemplateFormatVersion: "2010-09-09"
+Metadata:
+  yamlcdk:
+    service: demo
+Resources:
+  SearchCollection:
+    Type: AWS::OpenSearchServerless::Collection
+    Properties:
+      Name: search-dev
+      Type: SEARCH
+      Description: Search collection
+  SearchEncryptionPolicy:
+    Type: AWS::OpenSearchServerless::SecurityPolicy
+    Properties:
+      Name: search-encryption
+      Type: encryption
+      Policy: >-
+        [{"Rules":[{"ResourceType":"collection","Resource":["collection/search-dev"]}],"AWSOwnedKey":true}]
+  SearchAccessPolicy:
+    Type: AWS::OpenSearchServerless::AccessPolicy
+    Properties:
+      Name: search-data
+      Type: data
+      Policy: >-
+        [{"Rules":[{"ResourceType":"collection","Resource":["collection/search-dev"],"Permission":["aoss:*"]}],"Principal":["arn:aws:iam::123456789012:root"]}]
+  SearchVpcEndpoint:
+    Type: AWS::OpenSearchServerless::VpcEndpoint
+    Properties:
+      Name: search-endpoint
+      VpcId: vpc-12345678
+      SubnetIds:
+        - subnet-11111111
+      SecurityGroupIds:
+        - sg-12345678
+`);
+    const model = adaptCfnTemplate(parsed, "t.yml");
+    const openSearchConfig = model.domainConfigs.require(OPENSEARCH_SERVERLESS_CONFIG);
+
+    expect(openSearchConfig.collections.SearchCollection).toEqual(
+      expect.objectContaining({
+        name: "search-dev",
+        type: "SEARCH",
+      }),
+    );
+    expect(openSearchConfig.securityPolicies.SearchEncryptionPolicy).toEqual(
+      expect.objectContaining({
+        name: "search-encryption",
+        type: "encryption",
+      }),
+    );
+    expect(openSearchConfig.accessPolicies.SearchAccessPolicy).toEqual(
+      expect.objectContaining({
+        name: "search-data",
+        type: "data",
+      }),
+    );
+    expect(openSearchConfig.vpcEndpoints.SearchVpcEndpoint).toEqual(
+      expect.objectContaining({
+        name: "search-endpoint",
+        vpcId: "vpc-12345678",
+        subnetIds: ["subnet-11111111"],
+      }),
+    );
+  });
+
+  test("extracts Kinesis Firehose delivery streams into domain config", () => {
+    const parsed = parseCfnYaml(`
+AWSTemplateFormatVersion: "2010-09-09"
+Metadata:
+  yamlcdk:
+    service: demo
+Resources:
+  AuditDeliveryStream:
+    Type: AWS::KinesisFirehose::DeliveryStream
+    Properties:
+      DeliveryStreamName: audit-stream
+      DeliveryStreamType: DirectPut
+      ExtendedS3DestinationConfiguration:
+        BucketARN: arn:aws:s3:::audit-bucket
+        RoleARN: arn:aws:iam::123456789012:role/FirehoseRole
+`);
+    const model = adaptCfnTemplate(parsed, "t.yml");
+    const firehoseConfig = model.domainConfigs.require(KINESIS_FIREHOSE_CONFIG);
+
+    expect(firehoseConfig.streams.AuditDeliveryStream).toEqual(
+      expect.objectContaining({
+        name: "audit-stream",
+        type: "DirectPut",
+        properties: expect.objectContaining({
+          DeliveryStreamName: "audit-stream",
+          DeliveryStreamType: "DirectPut",
+          ExtendedS3DestinationConfiguration: {
+            BucketARN: "arn:aws:s3:::audit-bucket",
+            RoleARN: "arn:aws:iam::123456789012:role/FirehoseRole",
+          },
+        }),
+      }),
+    );
+    expect(firehoseConfig.helperDefaults).toBe(false);
   });
 
   test("wires multiple event types to the same function", () => {

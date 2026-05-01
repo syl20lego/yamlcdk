@@ -62,6 +62,7 @@ function adaptEvents(
       createSqsEvent(
         normalizeManagedResourceRef(sqsEvent.queue),
         sqsEvent.batchSize,
+        sqsEvent.maximumBatchingWindow,
       ),
     );
   }
@@ -213,8 +214,21 @@ storage:
         type: string
       billingMode: PAY_PER_REQUEST
       stream: NEW_AND_OLD_IMAGES
+  opensearch:
+    autoCreatePolicies: true
+    collections:
+      search:
+        type: SEARCH
 
 messaging:
+  firehose:
+    helperDefaults: true
+    streams:
+      audit:
+        properties:
+          ExtendedS3DestinationConfiguration:
+            BucketARN: arn:aws:s3:::my-firehose-bucket
+            RoleARN: arn:aws:iam::123456789012:role/MyFirehoseRole
   sqs:
     jobs:
       visibilityTimeout: 30

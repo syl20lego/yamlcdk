@@ -2,7 +2,9 @@
  * Adapt a CloudFormation template into the canonical {@link ServiceModel}.
  *
  * Extracts supported AWS resource types (Lambda, S3, DynamoDB, SQS, SNS,
- * EventBridge, API Gateway V2) and maps them to the compiler model.
+ * EventBridge, API Gateway V2, CloudFront, OpenSearch Serverless, Kinesis
+ * Firehose) and maps
+ * them to the compiler model.
  * Cross-resource wiring (EventSourceMappings, S3 notifications,
  * EventBridge targets, API routes) is resolved via logical ID lookups.
  */
@@ -22,6 +24,11 @@ import type {
   CloudFrontOriginRequestPolicyConfig,
   DynamoDBTableConfig,
   EventBridgeDomainConfig,
+  FirehoseDeliveryStreamConfig,
+  OpenSearchAccessPolicyConfig,
+  OpenSearchCollectionConfig,
+  OpenSearchSecurityPolicyConfig,
+  OpenSearchVpcEndpointConfig,
   S3BucketConfig,
   SNSSubscriptionConfig,
   SNSTopicConfig,
@@ -532,9 +539,15 @@ function wireEventSourceMappings(
     const sourceType = resourceTypes.get(sourceId);
     const batchSize =
       typeof p.BatchSize === "number" ? p.BatchSize : undefined;
+    const maximumBatchingWindow =
+      typeof p.MaximumBatchingWindowInSeconds === "number"
+        ? p.MaximumBatchingWindowInSeconds
+        : undefined;
 
     if (sourceType === "AWS::SQS::Queue") {
-      functions[fnId].events.push(createSqsEvent(sourceId, batchSize));
+      functions[fnId].events.push(
+        createSqsEvent(sourceId, batchSize, maximumBatchingWindow),
+      );
     } else if (sourceType === "AWS::DynamoDB::Table") {
       const startingPosition = (p.StartingPosition as string) ?? undefined;
       functions[fnId].events.push(
@@ -1199,6 +1212,203 @@ function extractDistributions(
   return distributions;
 }
 
+function isIntrinsicToken(value: unknown): value is Record<string, unknown> {
+  if (value === null || typeof value !== "object" || Array.isArray(value)) {
+    return false;
+  }
+  return Object.keys(value).some((key) => key === "Ref" || key.startsWith("Fn::"));
+}
+
+function toTokenString(
+  value: unknown,
+):
+  | string
+  | Record<string, unknown>
+  | undefined {
+  if (typeof value === "string") return value;
+  if (isIntrinsicToken(value)) return value;
+  return undefined;
+}
+
+function toTokenStringArray(
+  value: unknown,
+): Array<string | Record<string, unknown>> | undefined {
+  if (!Array.isArray(value)) return undefined;
+  const entries = value
+    .map((entry) => toTokenString(entry))
+    .filter(
+      (
+        entry,
+      ): entry is string | Record<string, unknown> => entry !== undefined,
+    );
+  return entries.length > 0 ? entries : undefined;
+}
+
+function toPolicyDocument(
+  value: unknown,
+):
+  | string
+  | Record<string, unknown>
+  | unknown[]
+  | undefined {
+  if (typeof value === "string") return value;
+  if (Array.isArray(value)) return value;
+  if (value !== null && typeof value === "object") {
+    return value as Record<string, unknown>;
+  }
+  return undefined;
+}
+
+function extractOpenSearchCollections(
+  resources: Record<string, CfnResource>,
+): Record<string, OpenSearchCollectionConfig> {
+  const collections: Record<string, OpenSearchCollectionConfig> = {};
+
+  for (const [logicalId, resource] of getResourcesByType(
+    resources,
+    "AWS::OpenSearchServerless::Collection",
+  )) {
+    const p = props(resource);
+    const rawTags = Array.isArray(p.Tags)
+      ? (p.Tags as Array<Record<string, unknown>>)
+      : undefined;
+    const tags = rawTags
+      ? Object.fromEntries(
+          rawTags
+            .map((tag) => [tag.Key, tag.Value] as const)
+            .filter(
+              (entry): entry is [string, string] =>
+                typeof entry[0] === "string" && typeof entry[1] === "string",
+            ),
+        )
+      : undefined;
+
+    collections[logicalId] = {
+      name: toTokenString(p.Name),
+      description:
+        typeof p.Description === "string" ? p.Description : undefined,
+      type: typeof p.Type === "string" ? p.Type : undefined,
+      standbyReplicas:
+        typeof p.StandbyReplicas === "string" ? p.StandbyReplicas : undefined,
+      collectionGroupName:
+        typeof p.CollectionGroupName === "string"
+          ? p.CollectionGroupName
+          : undefined,
+      encryptionConfig:
+        p.EncryptionConfig && typeof p.EncryptionConfig === "object"
+          ? (p.EncryptionConfig as Record<string, unknown>)
+          : undefined,
+      vectorOptions:
+        p.VectorOptions && typeof p.VectorOptions === "object"
+          ? (p.VectorOptions as Record<string, unknown>)
+          : undefined,
+      tags,
+    };
+  }
+
+  return collections;
+}
+
+function extractOpenSearchAccessPolicies(
+  resources: Record<string, CfnResource>,
+): Record<string, OpenSearchAccessPolicyConfig> {
+  const policies: Record<string, OpenSearchAccessPolicyConfig> = {};
+
+  for (const [logicalId, resource] of getResourcesByType(
+    resources,
+    "AWS::OpenSearchServerless::AccessPolicy",
+  )) {
+    const p = props(resource);
+    const policy = toPolicyDocument(p.Policy);
+    if (!policy) continue;
+
+    policies[logicalId] = {
+      name: toTokenString(p.Name) ?? logicalId,
+      description:
+        typeof p.Description === "string" ? p.Description : undefined,
+      type: typeof p.Type === "string" ? p.Type : "data",
+      policy,
+    };
+  }
+
+  return policies;
+}
+
+function extractOpenSearchSecurityPolicies(
+  resources: Record<string, CfnResource>,
+): Record<string, OpenSearchSecurityPolicyConfig> {
+  const policies: Record<string, OpenSearchSecurityPolicyConfig> = {};
+
+  for (const [logicalId, resource] of getResourcesByType(
+    resources,
+    "AWS::OpenSearchServerless::SecurityPolicy",
+  )) {
+    const p = props(resource);
+    const policy = toPolicyDocument(p.Policy);
+    if (!policy) continue;
+
+    policies[logicalId] = {
+      name: toTokenString(p.Name) ?? logicalId,
+      description:
+        typeof p.Description === "string" ? p.Description : undefined,
+      type: typeof p.Type === "string" ? p.Type : "encryption",
+      policy,
+    };
+  }
+
+  return policies;
+}
+
+function extractOpenSearchVpcEndpoints(
+  resources: Record<string, CfnResource>,
+): Record<string, OpenSearchVpcEndpointConfig> {
+  const endpoints: Record<string, OpenSearchVpcEndpointConfig> = {};
+
+  for (const [logicalId, resource] of getResourcesByType(
+    resources,
+    "AWS::OpenSearchServerless::VpcEndpoint",
+  )) {
+    const p = props(resource);
+    const vpcId = toTokenString(p.VpcId);
+    const subnetIds = toTokenStringArray(p.SubnetIds);
+    if (!vpcId || !subnetIds || subnetIds.length === 0) {
+      continue;
+    }
+
+    endpoints[logicalId] = {
+      name: toTokenString(p.Name) ?? logicalId,
+      vpcId,
+      subnetIds,
+      securityGroupIds: toTokenStringArray(p.SecurityGroupIds),
+    };
+  }
+
+  return endpoints;
+}
+
+function extractFirehoseDeliveryStreams(
+  resources: Record<string, CfnResource>,
+): Record<string, FirehoseDeliveryStreamConfig> {
+  const streams: Record<string, FirehoseDeliveryStreamConfig> = {};
+
+  for (const [logicalId, resource] of getResourcesByType(
+    resources,
+    "AWS::KinesisFirehose::DeliveryStream",
+  )) {
+    const p = props(resource);
+    streams[logicalId] = {
+      name: toTokenString(p.DeliveryStreamName),
+      type:
+        typeof p.DeliveryStreamType === "string"
+          ? p.DeliveryStreamType
+          : undefined,
+      properties: { ...p },
+    };
+  }
+
+  return streams;
+}
+
 // ─── Main adaptation ────────────────────────────────────────
 
 function sanitizeName(input: string): string {
@@ -1241,6 +1451,12 @@ export function adaptCfnTemplate(
   const cachePolicies = extractCachePolicies(allResources);
   const originRequestPolicies = extractOriginRequestPolicies(allResources);
   const distributions = extractDistributions(allResources, resourceTypes);
+  const openSearchCollections = extractOpenSearchCollections(allResources);
+  const openSearchAccessPolicies = extractOpenSearchAccessPolicies(allResources);
+  const openSearchSecurityPolicies =
+    extractOpenSearchSecurityPolicies(allResources);
+  const openSearchVpcEndpoints = extractOpenSearchVpcEndpoints(allResources);
+  const firehoseDeliveryStreams = extractFirehoseDeliveryStreams(allResources);
 
   // Wire events to functions
   wireEventSourceMappings(allResources, functions, resourceTypes);
@@ -1268,6 +1484,17 @@ export function adaptCfnTemplate(
       cachePolicies,
       originRequestPolicies,
       distributions,
+    },
+    opensearchserverless: {
+      collections: openSearchCollections,
+      accessPolicies: openSearchAccessPolicies,
+      securityPolicies: openSearchSecurityPolicies,
+      vpcEndpoints: openSearchVpcEndpoints,
+      autoCreatePolicies: false,
+    },
+    kinesisfirehose: {
+      streams: firehoseDeliveryStreams,
+      helperDefaults: false,
     },
   };
 

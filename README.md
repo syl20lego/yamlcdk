@@ -191,8 +191,10 @@ functions: {}
 storage:
   s3: {}
   dynamodb: {}
+  opensearch: {}
 
 messaging:
+  firehose: {}
   sqs: {}
   sns: {}
 
@@ -269,7 +271,7 @@ Useful fields:
 - `events` - see the event types below
 - `restApi.apiKeyRequired` - per-function REST API key requirement when the global provider setting is not set
 
-Environment values can be plain strings or CloudFormation intrinsic functions (`Ref`, `Fn::GetAtt`, `Fn::Sub`, `Fn::Join`):
+Environment values can be plain strings or CloudFormation intrinsic functions (`Ref`, `Fn::GetAtt`, `Fn::Sub`, `Fn::Join`, `Fn::ImportValue`):
 
 ```yaml
 functions:
@@ -283,6 +285,8 @@ functions:
         Fn::GetAtt: [OrdersTable, Arn]
       COMPOSED_ARN:
         Fn::Sub: "arn:aws:sqs:${AWS::Region}:${AWS::AccountId}:my-queue"
+      OPEN_SEARCH_ENDPOINT:
+        Fn::ImportValue: consumer-search-endpoint
 ```
 
 Unsupported object shapes are rejected with an explicit error.
@@ -419,6 +423,51 @@ Fields:
 - `stream` - `NEW_IMAGE`, `OLD_IMAGE`, `NEW_AND_OLD_IMAGES`, or `KEYS_ONLY`
 
 If you use a DynamoDB stream event on a function, the table must set `stream`.
+
+### `storage.opensearch`
+
+```yaml
+storage:
+  opensearch:
+    autoCreatePolicies: true
+    collections:
+      search:
+        type: SEARCH
+    # Optional explicit resources:
+    accessPolicies: {}
+    securityPolicies: {}
+    vpcEndpoints: {}
+```
+
+Fields:
+
+- `autoCreatePolicies` - when `true`, yamlcdk auto-generates default encryption and data access policies for collections that do not already have matching explicit policies.
+- `collections` - managed OpenSearch Serverless collections (`name`, `description`, `type`, `standbyReplicas`, `collectionGroupName`, optional `encryptionConfig`, optional `vectorOptions`, `tags`).
+- `securityPolicies` - managed `AWS::OpenSearchServerless::SecurityPolicy` definitions (`name`, `type`, `description`, `policy`).
+- `accessPolicies` - managed `AWS::OpenSearchServerless::AccessPolicy` definitions (`name`, `type`, `description`, `policy`).
+- `vpcEndpoints` - managed `AWS::OpenSearchServerless::VpcEndpoint` definitions (`name`, `vpcId`, `subnetIds`, optional `securityGroupIds`).
+
+### `messaging.firehose`
+
+```yaml
+messaging:
+  firehose:
+    helperDefaults: true
+    streams:
+      audit:
+        properties:
+          ExtendedS3DestinationConfiguration:
+            BucketARN: arn:aws:s3:::my-firehose-bucket
+            RoleARN: arn:aws:iam::123456789012:role/MyFirehoseRole
+```
+
+Fields:
+
+- `helperDefaults` - when `true`, yamlcdk defaults missing `DeliveryStreamName` to `<streamKey>-<stage>` and missing `DeliveryStreamType` to `DirectPut`.
+- `streams` - managed `AWS::KinesisFirehose::DeliveryStream` resources keyed by stream name.
+- `streams.<name>.name` - optional explicit delivery stream name override.
+- `streams.<name>.type` - optional explicit delivery stream type override.
+- `streams.<name>.properties` - broad CloudFormation passthrough for `AWS::KinesisFirehose::DeliveryStream` properties (for example destination/source/encryption blocks).
 
 ### `messaging.sqs`
 
@@ -593,8 +642,14 @@ functions:
     events:
       sqs:
         - queue: jobs
-          batchSize: 10
+          batchSize: 100
+          maximumBatchingWindow: 60
 ```
+
+SQS event rules:
+- `batchSize` must be an integer between `1` and `10000`.
+- If `batchSize > 10`, set `maximumBatchingWindow` to a value greater than `0`.
+- For FIFO queues, AWS limits `batchSize` to `10`.
 
 ### `sns`
 
@@ -679,7 +734,7 @@ Supported top-level surface today:
 - `custom.esbuild` (mapped to canonical function esbuild build options)
 - `provider.name`, `provider.stage`, `provider.region`, `provider.runtime`, `provider.timeout`, `provider.memorySize`, `provider.stackName`, `provider.profile`, `provider.tags`
 - `provider.iam.deploymentRole`, `provider.deploymentBucket.name`
-- `functions.*.handler`, `runtime`, `timeout`, `memorySize`, `environment` (including CloudFormation intrinsics like `!Ref`, `!GetAtt`, `!Sub`, `!Join`), `role`, `url`, `build`, `skipEsbuild`
+- `functions.*.handler`, `runtime`, `timeout`, `memorySize`, `environment` (including CloudFormation intrinsics like `!Ref`, `!GetAtt`, `!Sub`, `!Join`, `!ImportValue`), `role`, `url`, `build`, `skipEsbuild`
 - function events: `http`, `httpApi`, `schedule`, `s3`, `sns`, `sqs`, `stream` (DynamoDB only), and `eventBridge` (with `eventBus`, `pattern`, `schedule`)
 - raw `resources.Resources` / `resources.Outputs`
 
@@ -848,6 +903,11 @@ The following CloudFormation resource types are extracted and mapped to the yaml
 | `AWS::Events::EventBus` | EventBridge event bus resources and references used by function EventBridge events |
 | `AWS::Events::Rule` | EventBridge schedule and event pattern rules targeting functions |
 | `AWS::ApiGatewayV2::Api/Route/Integration` | HTTP API routes targeting functions |
+| `AWS::KinesisFirehose::DeliveryStream` | Kinesis Firehose delivery streams |
+| `AWS::OpenSearchServerless::Collection` | OpenSearch Serverless collections |
+| `AWS::OpenSearchServerless::AccessPolicy` | OpenSearch Serverless data access policies |
+| `AWS::OpenSearchServerless::SecurityPolicy` | OpenSearch Serverless security policies |
+| `AWS::OpenSearchServerless::VpcEndpoint` | OpenSearch Serverless VPC interface endpoints |
 
 Unsupported resource types in the template are silently ignored.
 

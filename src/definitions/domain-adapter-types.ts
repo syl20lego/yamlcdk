@@ -19,6 +19,12 @@ import type {
 import type {
   EventBridgeDomainConfig,
 } from "../domains/eventbridge/model.js";
+import type {
+  OpenSearchServerlessDomainConfig,
+} from "../domains/opensearchserverless/model.js";
+import type {
+  KinesisFirehoseDomainConfig,
+} from "../domains/kinesisfirehose/model.js";
 
 export interface CloudFormationDomainConfigInput {
   readonly [domainId: string]: unknown;
@@ -29,6 +35,8 @@ export interface CloudFormationDomainConfigInput {
   readonly eventbridge: EventBridgeDomainConfig;
   readonly apis: ApisDomainConfig;
   readonly cloudfront: CloudFrontDomainConfig;
+  readonly opensearchserverless: OpenSearchServerlessDomainConfig;
+  readonly kinesisfirehose: KinesisFirehoseDomainConfig;
 }
 
 export interface ServerlessDomainState {
@@ -39,6 +47,8 @@ export interface ServerlessDomainState {
   sns: SNSDomainConfig["topics"];
   eventbridge: EventBridgeDomainConfig["eventBuses"];
   cloudfront: CloudFrontDomainConfig;
+  opensearchserverless: OpenSearchServerlessDomainConfig;
+  kinesisfirehose: KinesisFirehoseDomainConfig;
 }
 
 export function createEmptyServerlessDomainState(): ServerlessDomainState {
@@ -49,5 +59,16 @@ export function createEmptyServerlessDomainState(): ServerlessDomainState {
     sns: {},
     eventbridge: {},
     cloudfront: { cachePolicies: {}, originRequestPolicies: {}, distributions: {} },
+    opensearchserverless: {
+      collections: {},
+      accessPolicies: {},
+      securityPolicies: {},
+      vpcEndpoints: {},
+      autoCreatePolicies: false,
+    },
+    kinesisfirehose: {
+      streams: {},
+      helperDefaults: false,
+    },
   };
 }

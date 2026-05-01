@@ -6,6 +6,7 @@ import { runInit } from "./commands/init.js";
 import { runRemove } from "./commands/remove.js";
 import { runSynth } from "./commands/synth.js";
 import { runValidate } from "./commands/validate.js";
+import { formatCliError } from "./runtime/cli-error.js";
 
 const program = new Command();
 
@@ -70,6 +71,19 @@ function collectCliOptionVariables(argv: readonly string[]): CliOptionMap {
 
   return options;
 }
+
+function exitWithCliError(error: unknown): void {
+  process.stderr.write(`\nyamlcdk error:\n${formatCliError(error)}\n`);
+  process.exit(1);
+}
+
+process.on("uncaughtException", (error) => {
+  exitWithCliError(error);
+});
+
+process.on("unhandledRejection", (reason) => {
+  exitWithCliError(reason);
+});
 
 program
   .name("yamlcdk")
@@ -203,7 +217,6 @@ withAwsFlags(program.command("remove").description("Destroy stack"))
     },
   );
 
-program.parseAsync(process.argv).catch((error: Error) => {
-  process.stderr.write(`\nyamlcdk error:\n${error.message}\n`);
-  process.exit(1);
+program.parseAsync(process.argv).catch((error: unknown) => {
+  exitWithCliError(error);
 });

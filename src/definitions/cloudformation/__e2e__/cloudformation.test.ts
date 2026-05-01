@@ -893,4 +893,82 @@ Resources:
       template.resourceCountIs("AWS::CloudFront::Distribution", 1);
     });
   });
+
+  describe("OpenSearch Serverless resources", () => {
+    test("creates Collection, AccessPolicy, SecurityPolicy, and VpcEndpoint resources", () => {
+      const { template } = buildDefinitionFromYaml(`
+AWSTemplateFormatVersion: "2010-09-09"
+Metadata:
+  yamlcdk:
+    service: opensearch-serverless
+Resources:
+  SearchCollection:
+    Type: AWS::OpenSearchServerless::Collection
+    Properties:
+      Name: search-dev
+      Type: SEARCH
+  SearchEncryptionPolicy:
+    Type: AWS::OpenSearchServerless::SecurityPolicy
+    Properties:
+      Name: search-encryption
+      Type: encryption
+      Policy: >-
+        [{"Rules":[{"ResourceType":"collection","Resource":["collection/search-dev"]}],"AWSOwnedKey":true}]
+  SearchAccessPolicy:
+    Type: AWS::OpenSearchServerless::AccessPolicy
+    Properties:
+      Name: search-data
+      Type: data
+      Policy: >-
+        [{"Rules":[{"ResourceType":"collection","Resource":["collection/search-dev"],"Permission":["aoss:*"]}],"Principal":["arn:aws:iam::123456789012:root"]}]
+  SearchVpcEndpoint:
+    Type: AWS::OpenSearchServerless::VpcEndpoint
+    Properties:
+      Name: search-endpoint
+      VpcId: vpc-12345678
+      SubnetIds:
+        - subnet-11111111
+      SecurityGroupIds:
+        - sg-12345678
+`);
+
+      template.resourceCountIs("AWS::OpenSearchServerless::Collection", 1);
+      template.resourceCountIs("AWS::OpenSearchServerless::SecurityPolicy", 1);
+      template.resourceCountIs("AWS::OpenSearchServerless::AccessPolicy", 1);
+      template.resourceCountIs("AWS::OpenSearchServerless::VpcEndpoint", 1);
+    });
+  });
+
+  describe("Kinesis Firehose resources", () => {
+    test("creates DeliveryStream resources", () => {
+      const { template } = buildDefinitionFromYaml(`
+AWSTemplateFormatVersion: "2010-09-09"
+Metadata:
+  yamlcdk:
+    service: firehose
+Resources:
+  AuditDeliveryStream:
+    Type: AWS::KinesisFirehose::DeliveryStream
+    Properties:
+      DeliveryStreamName: audit-stream
+      DeliveryStreamType: DirectPut
+      ExtendedS3DestinationConfiguration:
+        BucketARN: arn:aws:s3:::audit-bucket
+        RoleARN: arn:aws:iam::123456789012:role/FirehoseRole
+`);
+
+      template.resourceCountIs("AWS::KinesisFirehose::DeliveryStream", 1);
+      template.hasResourceProperties(
+        "AWS::KinesisFirehose::DeliveryStream",
+        Match.objectLike({
+          DeliveryStreamName: "audit-stream",
+          DeliveryStreamType: "DirectPut",
+          ExtendedS3DestinationConfiguration: Match.objectLike({
+            BucketARN: "arn:aws:s3:::audit-bucket",
+            RoleARN: "arn:aws:iam::123456789012:role/FirehoseRole",
+          }),
+        }),
+      );
+    });
+  });
 });

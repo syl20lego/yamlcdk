@@ -7,6 +7,8 @@ import { SNS_CONFIG } from "../../domains/sns/model.js";
 import { EVENTBRIDGE_CONFIG } from "../../domains/eventbridge/model.js";
 import { APIS_CONFIG } from "../../domains/apis/model.js";
 import { CLOUDFRONT_CONFIG } from "../../domains/cloudfront/model.js";
+import { OPENSEARCH_SERVERLESS_CONFIG } from "../../domains/opensearchserverless/model.js";
+import { KINESIS_FIREHOSE_CONFIG } from "../../domains/kinesisfirehose/model.js";
 
 export function adaptDomainConfigsFromCloudFormation(
   input: CloudFormationDomainConfigInput,
@@ -19,5 +21,7 @@ export function adaptDomainConfigsFromCloudFormation(
   domainConfigs.set(EVENTBRIDGE_CONFIG, input.eventbridge ?? { eventBuses: {} });
   domainConfigs.set(APIS_CONFIG, input.apis);
   domainConfigs.set(CLOUDFRONT_CONFIG, input.cloudfront);
+  domainConfigs.set(OPENSEARCH_SERVERLESS_CONFIG, input.opensearchserverless);
+  domainConfigs.set(KINESIS_FIREHOSE_CONFIG, input.kinesisfirehose);
   return domainConfigs;
 }

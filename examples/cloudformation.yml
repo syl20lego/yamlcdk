@@ -191,3 +191,48 @@ Resources:
           CachePolicyId: !Ref ApiCachePolicy
           OriginRequestPolicyId: !Ref AllViewerPolicy
         Enabled: true
+
+  # ─── OpenSearch Serverless ──────────────────────────────────
+
+  SearchCollection:
+    Type: AWS::OpenSearchServerless::Collection
+    Properties:
+      Name: search-dev
+      Type: SEARCH
+
+  SearchEncryptionPolicy:
+    Type: AWS::OpenSearchServerless::SecurityPolicy
+    Properties:
+      Name: search-encryption
+      Type: encryption
+      Policy: >-
+        [{"Rules":[{"ResourceType":"collection","Resource":["collection/search-dev"]}],"AWSOwnedKey":true}]
+
+  SearchAccessPolicy:
+    Type: AWS::OpenSearchServerless::AccessPolicy
+    Properties:
+      Name: search-data
+      Type: data
+      Policy: >-
+        [{"Rules":[{"ResourceType":"collection","Resource":["collection/search-dev"],"Permission":["aoss:*"]},{"ResourceType":"index","Resource":["index/search-dev/*"],"Permission":["aoss:*"]}],"Principal":["arn:aws:iam::123456789012:root"]}]
+
+  SearchVpcEndpoint:
+    Type: AWS::OpenSearchServerless::VpcEndpoint
+    Properties:
+      Name: search-endpoint
+      VpcId: vpc-12345678
+      SubnetIds:
+        - subnet-11111111
+      SecurityGroupIds:
+        - sg-12345678
+
+  # ─── Kinesis Firehose ───────────────────────────────────────
+
+  AuditDeliveryStream:
+    Type: AWS::KinesisFirehose::DeliveryStream
+    Properties:
+      DeliveryStreamName: audit-stream
+      DeliveryStreamType: DirectPut
+      ExtendedS3DestinationConfiguration:
+        BucketARN: arn:aws:s3:::my-firehose-bucket
+        RoleARN: arn:aws:iam::123456789012:role/MyFirehoseRole

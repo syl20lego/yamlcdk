@@ -406,4 +406,31 @@ describe("functions domain e2e", () => {
       }),
     );
   });
+
+  test("synthesizes Fn::ImportValue intrinsic environment values", () => {
+    const { template } = synthServiceConfig({
+      functions: {
+        worker: functionConfig({
+          environment: {
+            OPEN_SEARCH_ENDPOINT: {
+              "Fn::ImportValue": "consumer-search-endpoint",
+            },
+          },
+        }),
+      },
+    });
+
+    template.hasResourceProperties(
+      "AWS::Lambda::Function",
+      Match.objectLike({
+        Environment: {
+          Variables: {
+            OPEN_SEARCH_ENDPOINT: Match.objectLike({
+              "Fn::ImportValue": "consumer-search-endpoint",
+            }),
+          },
+        },
+      }),
+    );
+  });
 });

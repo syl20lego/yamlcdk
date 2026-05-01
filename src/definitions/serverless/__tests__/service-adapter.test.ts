@@ -154,6 +154,90 @@ custom:
     expect(model.provider.region).toBe("us-east-1");
   });
 
+  test("resolves nested expressions in file path and selector for file(...) variables", () => {
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "yamlcdk-file-nested-"));
+    try {
+      fs.writeFileSync(
+        path.join(tmpDir, "dev.env.yml"),
+        ["dev:", "  API_KEY: from-file-api-key"].join("\n"),
+        "utf8",
+      );
+
+      const resolved = resolveServerlessVariables(
+        parseCfnYaml(
+          [
+            "service:",
+            "  name: demo-service",
+            "custom:",
+            "  global:",
+            "    STAGE: dev",
+            "  apiKey: ${file(./${self:custom.global.STAGE}.env.yml):${self:custom.global.STAGE}.API_KEY, 'unused-fallback'}",
+          ].join("\n"),
+        ),
+        { filePath: path.join(tmpDir, "serverless.yml") },
+      ) as Record<string, unknown>;
+
+      expect((resolved.custom as Record<string, unknown>).apiKey).toBe("from-file-api-key");
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+    }
+  });
+
+  test("does not evaluate nested fallback when primary file variable resolves", () => {
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "yamlcdk-file-fallback-lazy-"));
+    try {
+      fs.writeFileSync(
+        path.join(tmpDir, "dev.env.yml"),
+        ["dev:", "  API_KEY: from-file-api-key"].join("\n"),
+        "utf8",
+      );
+
+      const resolved = resolveServerlessVariables(
+        parseCfnYaml(
+          [
+            "service: demo-service",
+            "custom:",
+            "  global:",
+            "    STAGE: dev",
+            "    API_KEY: ${file(./${self:custom.global.STAGE}.env.yml):${self:custom.global.STAGE}.API_KEY, '${self:service.name}-${self:custom.global.STAGE}'}",
+          ].join("\n"),
+        ),
+        { filePath: path.join(tmpDir, "serverless.yml") },
+      ) as Record<string, unknown>;
+
+      const global = (resolved.custom as Record<string, unknown>).global as Record<
+        string,
+        unknown
+      >;
+      expect(global.API_KEY).toBe("from-file-api-key");
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+    }
+  });
+
+  test("resolves near-exact nested fallback shape inside file(...) variables", () => {
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "yamlcdk-file-fallback-nested-"));
+    try {
+      const resolved = resolveServerlessVariables(
+        parseCfnYaml(
+          [
+            "service:",
+            "  name: demo-service",
+            "custom:",
+            "  global:",
+            "    STAGE: dev",
+            "  apiKey: ${file(./${self:custom.global.STAGE}.env.yml):${self:custom.global.STAGE}.API_KEY, '${self:service.name}-${self:custom.global.STAGE}'}",
+          ].join("\n"),
+        ),
+        { filePath: path.join(tmpDir, "serverless.yml") },
+      ) as Record<string, unknown>;
+
+      expect((resolved.custom as Record<string, unknown>).apiKey).toBe("demo-service-dev");
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+    }
+  });
+
   test("definition plugin load passes CLI opt values into variable resolution", () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), "yamlcdk-serverless-opt-"));
     const serverlessPath = path.join(dir, "serverless.yml");
@@ -768,6 +852,52 @@ functions:
     }
   });
 
+  test("skips schedule events when enabled is false", () => {
+    const source = `
+service: demo
+provider:
+  name: aws
+functions:
+  worker:
+    handler: src/worker.handler
+    events:
+      - schedule:
+          enabled: false
+          rate: rate(5 minutes)
+`;
+    let model: ReturnType<typeof adaptServerlessConfig> | undefined;
+
+    expect(() => {
+      model = adaptServerlessConfig(parseCfnYaml(source), "serverless.yml");
+    }).not.toThrow();
+
+    expect(model?.functions.worker.events).toEqual([]);
+  });
+
+  test("skips eventBridge object events when enabled is false", () => {
+    const source = `
+service: demo
+provider:
+  name: aws
+functions:
+  worker:
+    handler: src/worker.handler
+    events:
+      - eventBridge:
+          enabled: false
+          pattern:
+            source:
+              - marketing
+`;
+    let model: ReturnType<typeof adaptServerlessConfig> | undefined;
+
+    expect(() => {
+      model = adaptServerlessConfig(parseCfnYaml(source), "serverless.yml");
+    }).not.toThrow();
+
+    expect(model?.functions.worker.events).toEqual([]);
+  });
+
   test("maps custom.esbuild options and applies function-level overrides", () => {
     const model = adaptServerlessConfig(
       parseCfnYaml(`
@@ -1027,6 +1157,60 @@ functions:
     expect(model.domainConfigs.require(SQS_CONFIG).queues).toEqual({});
   });
 
+  test("supports SQS batchSize greater than 10 when maximumBatchingWindow is set", () => {
+    const model = adaptServerlessConfig(
+      parseCfnYaml(`
+service: demo
+provider:
+  name: aws
+functions:
+  worker:
+    handler: src/worker.handler
+    events:
+      - sqs:
+          arn: !GetAtt JobsQueue.Arn
+          maximumBatchingWindow: 60
+          batchSize: 100
+resources:
+  Resources:
+    JobsQueue:
+      Type: AWS::SQS::Queue
+`),
+      "serverless.yml",
+    );
+
+    expect(model.functions.worker.events).toContainEqual({
+      type: "sqs",
+      queue: "JobsQueue",
+      batchSize: 100,
+      maximumBatchingWindow: 60,
+    });
+  });
+
+  test("rejects SQS batchSize greater than 10 when maximumBatchingWindow is missing", () => {
+    expect(() =>
+      adaptServerlessConfig(
+        parseCfnYaml(`
+service: demo
+provider:
+  name: aws
+functions:
+  worker:
+    handler: src/worker.handler
+    events:
+      - sqs:
+          arn: !GetAtt JobsQueue.Arn
+          batchSize: 100
+resources:
+  Resources:
+    JobsQueue:
+      Type: AWS::SQS::Queue
+`),
+        "serverless.yml",
+      ),
+    ).toThrow(/maximumBatchingWindow must be > 0 when batchSize is greater than 10/);
+  });
+
   test("adapts extended SNS topic properties and subscription options from resources.Resources", () => {
     const model = adaptServerlessConfig(
       parseCfnYaml(`
@@ -1201,6 +1385,26 @@ functions:
     });
   });
 
+  test("accepts Fn::ImportValue intrinsics in function environment", () => {
+    const model = adaptServerlessConfig(
+      parseCfnYaml(`
+service: demo
+provider:
+  name: aws
+functions:
+  worker:
+    handler: src/worker.handler
+    environment:
+      OPEN_SEARCH_ENDPOINT: !ImportValue consumer-search-endpoint
+`),
+      "serverless.yml",
+    );
+
+    expect(model.functions.worker.environment?.OPEN_SEARCH_ENDPOINT).toEqual({
+      "Fn::ImportValue": "consumer-search-endpoint",
+    });
+  });
+
   test("rejects unsupported object shapes in function environment", () => {
     expect(() =>
       adaptServerlessConfig(
@@ -1221,4 +1425,3 @@ functions:
     ).toThrow(/must be a scalar value or a supported CloudFormation intrinsic/);
   });
 });
-

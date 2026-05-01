@@ -616,15 +616,26 @@ export function resolveDefinitionVariables(
       expression: string,
       currentPath: string,
     ): VariableOutcome => {
-      const prepared = resolveExpressionTemplate(expression, currentPath);
-      if (prepared.type !== "value") return prepared;
-
       let sawSupportedSource = false;
       let sawDeferred = false;
-      for (const alternative of splitTopLevel(
-        String(prepared.value),
-        ",",
-      )) {
+      for (const rawAlternative of splitTopLevel(expression, ",")) {
+        const preparedAlternative = resolveExpressionTemplate(
+          rawAlternative,
+          currentPath,
+        );
+        if (preparedAlternative.type === "deferred") {
+          sawDeferred = true;
+          continue;
+        }
+        if (preparedAlternative.type === "missing") {
+          sawSupportedSource = true;
+          continue;
+        }
+        if (preparedAlternative.type === "skip") {
+          continue;
+        }
+
+        const alternative = String(preparedAlternative.value);
         const literal = parseLiteralVariableToken(alternative);
         if (literal !== undefined) {
           if (sawDeferred) continue;

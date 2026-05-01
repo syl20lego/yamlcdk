@@ -89,6 +89,15 @@ Resources:
       TopicArn: !Ref EventsTopic
       Endpoint: !GetAtt JobsQueue.Arn
 
+  AuditDeliveryStream:
+    Type: AWS::KinesisFirehose::DeliveryStream
+    Properties:
+      DeliveryStreamName: audit-stream
+      DeliveryStreamType: DirectPut
+      ExtendedS3DestinationConfiguration:
+        BucketARN: arn:aws:s3:::my-firehose-bucket
+        RoleARN: arn:aws:iam::123456789012:role/MyFirehoseRole
+
   # ─── Event Wiring ──────────────────────────────────────────
 
   HelloSqsTrigger:
@@ -120,6 +129,30 @@ Resources:
       ApiId: !Ref HttpApi
       RouteKey: "GET /hello"
       Target: !Join ["/", ["integrations", !Ref HelloIntegration]]
+
+  # ─── OpenSearch Serverless ───────────────────────────────────
+
+  SearchCollection:
+    Type: AWS::OpenSearchServerless::Collection
+    Properties:
+      Name: search-dev
+      Type: SEARCH
+
+  SearchEncryptionPolicy:
+    Type: AWS::OpenSearchServerless::SecurityPolicy
+    Properties:
+      Name: search-encryption
+      Type: encryption
+      Policy: >-
+        [{"Rules":[{"ResourceType":"collection","Resource":["collection/search-dev"]}],"AWSOwnedKey":true}]
+
+  SearchAccessPolicy:
+    Type: AWS::OpenSearchServerless::AccessPolicy
+    Properties:
+      Name: search-data
+      Type: data
+      Policy: >-
+        [{"Rules":[{"ResourceType":"collection","Resource":["collection/search-dev"],"Permission":["aoss:*"]},{"ResourceType":"index","Resource":["index/search-dev/*"],"Permission":["aoss:*"]}],"Principal":["arn:aws:iam::123456789012:root"]}]
 `;
 
 export const cloudformationDefinitionPlugin: DefinitionPlugin = {

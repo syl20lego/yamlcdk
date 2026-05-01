@@ -8,6 +8,8 @@ import { DYNAMODB_CONFIG } from "../../../domains/dynamodb/model.js";
 import { S3_CONFIG } from "../../../domains/s3/model.js";
 import { SNS_CONFIG } from "../../../domains/sns/model.js";
 import { SQS_CONFIG } from "../../../domains/sqs/model.js";
+import { OPENSEARCH_SERVERLESS_CONFIG } from "../../../domains/opensearchserverless/model.js";
+import { KINESIS_FIREHOSE_CONFIG } from "../../../domains/kinesisfirehose/model.js";
 
 describe("adaptDomainConfigsFromYamlcdk", () => {
   test("populates S3 domain config from storage.s3", () => {
@@ -175,5 +177,90 @@ describe("adaptDomainConfigsFromYamlcdk", () => {
       distributions: {},
     });
   });
-});
 
+  test("populates OpenSearch Serverless domain config from storage.opensearch", () => {
+    const normalized = normalizeConfig(
+      validateServiceConfig({
+        service: "demo",
+        storage: {
+          opensearch: {
+            autoCreatePolicies: true,
+            collections: {
+              search: {
+                type: "SEARCH",
+              },
+            },
+            vpcEndpoints: {
+              privateEndpoint: {
+                vpcId: "vpc-12345678",
+                subnetIds: ["subnet-11111111"],
+                securityGroupIds: ["sg-12345678"],
+              },
+            },
+          },
+        },
+        functions: {},
+      }),
+    );
+
+    const domainConfigs = adaptDomainConfigsFromYamlcdk(normalized);
+
+    expect(domainConfigs.require(OPENSEARCH_SERVERLESS_CONFIG)).toEqual({
+      autoCreatePolicies: true,
+      collections: {
+        search: {
+          type: "SEARCH",
+        },
+      },
+      accessPolicies: {},
+      securityPolicies: {},
+      vpcEndpoints: {
+        privateEndpoint: {
+          vpcId: "vpc-12345678",
+          subnetIds: ["subnet-11111111"],
+          securityGroupIds: ["sg-12345678"],
+        },
+      },
+    });
+  });
+
+  test("populates Firehose domain config from messaging.firehose", () => {
+    const normalized = normalizeConfig(
+      validateServiceConfig({
+        service: "demo",
+        messaging: {
+          firehose: {
+            helperDefaults: true,
+            streams: {
+              audit: {
+                properties: {
+                  ExtendedS3DestinationConfiguration: {
+                    BucketARN: "arn:aws:s3:::audit-bucket",
+                    RoleARN: "arn:aws:iam::123456789012:role/FirehoseRole",
+                  },
+                },
+              },
+            },
+          },
+        },
+        functions: {},
+      }),
+    );
+
+    const domainConfigs = adaptDomainConfigsFromYamlcdk(normalized);
+
+    expect(domainConfigs.require(KINESIS_FIREHOSE_CONFIG)).toEqual({
+      helperDefaults: true,
+      streams: {
+        audit: {
+          properties: {
+            ExtendedS3DestinationConfiguration: {
+              BucketARN: "arn:aws:s3:::audit-bucket",
+              RoleARN: "arn:aws:iam::123456789012:role/FirehoseRole",
+            },
+          },
+        },
+      },
+    });
+  });
+});

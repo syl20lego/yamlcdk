@@ -8,8 +8,10 @@ export * from "../../domains/s3/index.js";
 export * from "../../domains/dynamodb/index.js";
 export * from "../../domains/sqs/index.js";
 export * from "../../domains/sns/index.js";
+export * from "../../domains/kinesisfirehose/index.js";
 export * from "../../domains/apis/index.js";
 export * from "../../domains/cloudfront/index.js";
+export * from "../../domains/opensearchserverless/index.js";
 export * from "../../domains/functions/index.js";
 export * from "../../domains/eventbridge/index.js";
 
